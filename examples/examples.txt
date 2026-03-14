@@ -1,0 +1,86 @@
+bind = $mod, X, exec, nu -c "let win = (hyprctl -j clients | from json | where initialClass == 'kitty-float' | first?); if $win != null { hyprctl dispatch closewindow address:($win.address) } else { kitty -1 --app-id kitty-float --override close_on_child_death=yes -e carnet-sandbox }"
+
+windowrulev2 = float, initialclass:kitty-float
+windowrulev2 = size 800 1000, initialclass:kitty-float
+windowrulev2 = center, initialclass:kitty-float
+windowrulev2 = noborder, initialclass:kitty-float
+
+# ─────────────────────────────────────────────
+# FONT
+# ─────────────────────────────────────────────
+font_family      JetBrainsMono Nerd Font
+bold_font        auto
+italic_font      auto
+bold_italic_font auto
+font_size        13.0
+
+# Nerd Font symbol rendering (wider icons)
+# Use "Nerd Font Mono" variant if icons look too wide
+symbol_map U+E000-U+F8FF JetBrainsMono Nerd Font
+
+# ─────────────────────────────────────────────
+# CURSOR
+# ─────────────────────────────────────────────
+cursor_shape           beam
+cursor_blink_interval  0
+
+# ─────────────────────────────────────────────
+# SCROLLBACK
+# ─────────────────────────────────────────────
+scrollback_lines 10000
+
+# ─────────────────────────────────────────────
+# MOUSE
+# ─────────────────────────────────────────────
+mouse_hide_wait       3.0
+copy_on_select        no
+strip_trailing_spaces smart
+
+# ─────────────────────────────────────────────
+# PERFORMANCE
+# ─────────────────────────────────────────────
+# ms between repaints (~100fps)
+repaint_delay    10
+input_delay      3
+sync_to_monitor  yes
+
+# ─────────────────────────────────────────────
+# BELL
+# ─────────────────────────────────────────────
+enable_audio_bell no
+visual_bell_duration 0.0
+
+# ─────────────────────────────────────────────
+# WINDOW
+# ─────────────────────────────────────────────
+window_padding_width     8
+confirm_os_window_close  0
+background_opacity       0.75
+hide_window_decorations  no
+
+# ─────────────────────────────────────────────
+# TAB BAR
+# ─────────────────────────────────────────────
+tab_bar_style           powerline
+tab_powerline_style     slanted
+tab_title_template      "{index}: {title}"
+active_tab_font_style   bold
+
+# ─────────────────────────────────────────────
+# COLOR THEME
+# ─────────────────────────────────────────────
+# Use kitty's built-in theme picker: kitty +kitten themes
+# Below is a popular dark theme (Tokyo Night) inline example:
+include current-theme.conf
+
+# ─────────────────────────────────────────────
+# SHELL INTEGRATION
+# ─────────────────────────────────────────────
+shell_integration  enabled
+
+# ─────────────────────────────────────────────
+# STARTUP / INSTANCE
+# ─────────────────────────────────────────────
+allow_remote_control  yes
+# Uncomment to always use single-instance mode:
+linux_display_server  wayland
