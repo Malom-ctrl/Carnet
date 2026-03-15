@@ -69,7 +69,6 @@ binds {
 window-rule {
     match { app-id "carnet-tui"; }
     open-floating true
-    default-column-width { fixed 800; }
     focus-ring { off }
     border { off }
 }
