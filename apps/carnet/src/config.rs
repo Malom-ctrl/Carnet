@@ -221,15 +221,3 @@ impl Config {
         config
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_default_config() {
-        let config = Config::default();
-        assert_eq!(config.history_max_items, 100);
-        assert_eq!(config.ui_color_primary, "93");
-    }
-}

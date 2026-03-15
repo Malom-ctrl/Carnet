@@ -1,0 +1,61 @@
+name: Rust
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  XDG_RUNTIME_DIR: /tmp
+  WAYLAND_DISPLAY: wayland-0
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    container: fedora:latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          dnf install -y \
+            pkgconf-pkg-config \
+            glib2-devel \
+            glycin-devel \
+            glycin-loaders \
+            bubblewrap \
+            wl-clipboard \
+            gcc \
+            gcc-c++ \
+            make \
+            rust \
+            cargo \
+            rustfmt \
+            clippy
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Build
+        run: cargo build --verbose
+
+      - name: Run tests
+        run: cargo test --verbose
