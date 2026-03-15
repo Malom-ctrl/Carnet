@@ -1,7 +1,27 @@
 [package]
 name = "carnet"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
+
+[[bin]]
+name = "carnet"
+path = "src/main.rs"
+
+[[bin]]
+name = "carnet-watch"
+path = "src/bin/carnet-watch.rs"
+
+[[bin]]
+name = "carnet-preprocess"
+path = "src/bin/carnet-preprocess.rs"
+
+[[bin]]
+name = "carnet-sandbox"
+path = "src/bin/carnet-sandbox.rs"
+
+[[bin]]
+name = "carnet-clipboard-fetch-uris"
+path = "src/bin/carnet-clipboard-fetch-uris.rs"
 
 [dependencies]
 libc = "0.2.183"
