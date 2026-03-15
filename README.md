@@ -2,14 +2,15 @@
 ## A secure, lightweight and extendable clipboard manager written in Rust.
 
 ### Features:
-- **Sandboxed process**: you copy data from all around the internet, emails, documents, all the time. To prevent this arbitrary data from performing exploits on your system Carnet runs in a strong sandbox where it cannot see your files, cannot access the network, in fact it only has access to the exact permissions required for it to function. _We use the battle tested Bubblewrap for sandboxing._
+- **Sandboxed process**: You copy data from all around the internet, emails and documents, all the time. To prevent this untrusted data from performing exploits on your system, Carnet runs in a strong sandbox where it can't see your files and can't access the network. In fact it only has access to the exact permissions required for it to function. _Carnet uses the battle-tested Bubblewrap for sandboxing._
 - **Secure handling of images**: Carnet uses **Glycin** to decode images. This means it only sees the raw data after it has been processed by a specialized, sandboxed image decoder.
 - **Lightweight**: Carnet has **no external crate dependencies*** which makes it super lightweight and removes the concern of supply chain attacks. It interacts directly with system libraries via FFI and uses standard utilities for IPC.
-- **Terminal UI**: Carnet lives in your terminal as a **TUI**. It is entirely responsive and will always fit your terminal size. It supports image rendering using the **Kitty graphics protocol**.
-- **Ricing ready**: using the config file you can make Carnet your own, down to the characters that make the borders in the UI!
+- **Terminal UI**: Carnet lives in your terminal as a **TUI**. It is responsive, which means it will resize with your terminal. It supports image rendering using the **Kitty graphics protocol**.
+- **Ricing ready**: Using the config file you can make Carnet your own, from the colors down to the style of the borders!
 - **Tools**: Carnet lets you create custom tools that you can run on the fly on your clipboard content. For example, you can encode/decode in base64, apply a black and white filter to images, or anything else you can imagine. Each tool is just a terminal command in the config that you can customize to be anything!
-- **Sensitive Mode**: support for `CLIPBOARD_STATE=sensitive` (e.g., from password managers) to automatically mask content in the UI.
-- **Clipboard history** and **Fuzzy search**.
+- **Sensitive mode**: Carnet supports masking sensitive data in it's UI, such as passwords and keys.
+- **Clipboard history**
+- **Fuzzy search**
 
 _* No external crates used for core logic, only `libc` and a small internal TUI library. Still depends on system libraries like `glib`, `glycin`, and utilities like `wl-clipboard` and `bwrap`._
 
@@ -17,12 +18,12 @@ _* No external crates used for core logic, only `libc` and a small internal TUI 
 
 Carnet relies on several system utilities and libraries to maintain its security model and functionality:
 
-- **Wayland Window Manager**: Carnet is made to work **only** under a recent modern wayland window manager **that supports the wlroots data-control protocol.**
+- **a Wayland Window Manager with support for the wlroots data-control protocol**: Such as Hyprland, Niri or Sway.
 - **bubblewrap**: For process sandboxing (`bwrap`).
 - **wl-clipboard**: For Wayland clipboard interaction (`wl-copy`, `wl-paste`).
 - **libglycin**: For secure, sandboxed image decoding (usually `libglycin-2` or `glycin-2`).
 
-### Optional but Recommended
+### Optional but Recommended:
 - **Kitty-compatible terminal**: Required to view image previews (e.g., Kitty, WezTerm, or any terminal supporting the Kitty graphics protocol). Without it, all image related feature will still function but you won't be able to see the images in the TUI.
 - **jq**: For the default JSON Pretty Print tool.
 - **ImageMagick**: If you want to create advanced image-processing tools.
@@ -38,9 +39,21 @@ This will put all the Carnet executables inside of your `~/.cargo/bin`.
 
 ### Setup
 
-**IMPORTANT** the paths below are assuming you installed from source using `cargo install`, if you downloaded the binaries directly just change to path to be where you've placed them instead.
+**IMPORTANT**: The paths below are assuming you installed from source using `cargo install`. If you downloaded the binaries directly just change the paths to where you've placed the executables instead.
 
-First, you will need to setup `carnet-watch` to run in the background. To do so, simply add `~/.cargo/bin/carnet-watch` to your `exec-once` on Hyprland or similar on other windows managers. `carnet-watch` is very lightweight and takes only around 100kB of RAM.
+First, you will need to setup `carnet-watch` to run in the background. 
+
+On **Hyprland**, add to your `hyprland.conf`:
+~~~hyprlang
+exec-once = ~/.cargo/bin/carnet-watch
+~~~
+
+On **Niri**, add to your `config.kdl`:
+~~~kdl
+spawn-at-startup "~/.cargo/bin/carnet-watch"
+~~~
+
+Or similar on other window managers.
 
 Then, to open the TUI you simply call `~/.cargo/bin/carnet-sandbox`.
 
@@ -76,12 +89,13 @@ window-rule {
 
 ## Tools
 
-Now the best part, the tools! You define them in your config file (`~/.config/carnet/config`). Each tool takes the clipboard content via `stdin` and if it outputs anything to `stdout`, it will be copied back to your clipboard.
+Now the best part: the tools! You define them in your config file (`~/.config/carnet/config`). Each tool takes the clipboard content via `stdin` and if it outputs anything to `stdout`, it will be copied back to your clipboard.
 
 Format: `TOOL_NAME = Display Name | command to run | context`
+
 Context can be `text`, `image`, or `both`.
 
-**Example Tools:**
+**Example Tools**
 ~~~ini
 TOOL_UPPER = Upper Case | tr '[:lower:]' '[:upper:]' | text
 TOOL_LOWER = Lower Case | tr '[:upper:]' '[:lower:]' | text
