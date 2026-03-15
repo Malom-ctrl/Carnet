@@ -2,7 +2,7 @@
 ## A secure, lightweight and extendable clipboard manager written in Rust.
 
 ### Features:
-- **Fully sandboxed process**: you copy data from all around the internet, emails, documents, all the time. To prevent this arbitrary data from performing exploits on your system Carnet runs in a strong sandbox where it cannot see your files, cannot access the network, in fact it only has access to the exact permissions required for it to function. _We use the battle tested Bubblewrap for sandboxing._
+- **Sandboxed process**: you copy data from all around the internet, emails, documents, all the time. To prevent this arbitrary data from performing exploits on your system Carnet runs in a strong sandbox where it cannot see your files, cannot access the network, in fact it only has access to the exact permissions required for it to function. _We use the battle tested Bubblewrap for sandboxing._
 - **Secure handling of images**: Carnet uses **Glycin** to decode images. This means it only sees the raw data after it has been processed by a specialized, sandboxed image decoder.
 - **Lightweight**: Carnet has **no external crate dependencies*** which makes it super lightweight and removes the concern of supply chain attacks. It interacts directly with system libraries via FFI and uses standard utilities for IPC.
 - **Terminal UI**: Carnet lives in your terminal as a **TUI**. It is entirely responsive and will always fit your terminal size. It supports image rendering using the **Kitty graphics protocol**.
@@ -13,7 +13,19 @@
 
 _* No external crates used for core logic, only `libc` and a small internal TUI library. Still depends on system libraries like `glib`, `glycin`, and utilities like `wl-clipboard` and `bwrap`._
 
-## Getting started
+## Requirements
+
+Carnet relies on several system utilities and libraries to maintain its security model and functionality:
+
+- **Wayland Window Manager**: Carnet is made to work **only** under a recent modern wayland window manager **that supports the wlroots data-control protocol.**
+- **bubblewrap**: For process sandboxing (`bwrap`).
+- **wl-clipboard**: For Wayland clipboard interaction (`wl-copy`, `wl-paste`).
+- **libglycin**: For secure, sandboxed image decoding (usually `libglycin-2` or `glycin-2`).
+
+### Optional but Recommended
+- **Kitty-compatible terminal**: Required to view image previews (e.g., Kitty, WezTerm, or any terminal supporting the Kitty graphics protocol). Without it, all image related feature will still function but you won't be able to see the images in the TUI.
+- **jq**: For the default JSON Pretty Print tool.
+- **ImageMagick**: If you want to create advanced image-processing tools.
 
 ### Installation
 You can install from the source by running: 
