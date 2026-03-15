@@ -48,6 +48,13 @@ impl ClipboardManager {
         Self::copy_internal(content, config, true)
     }
 
+    /// Clears both regular and primary clipboards.
+    pub fn clear() -> std::io::Result<()> {
+        Command::new("wl-copy").arg("--clear").status()?;
+        Command::new("wl-copy").arg("--primary").arg("--clear").status()?;
+        Ok(())
+    }
+
     fn copy_internal(
         content: &ClipboardContent,
         config: &Config,

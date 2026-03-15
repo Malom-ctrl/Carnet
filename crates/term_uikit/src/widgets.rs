@@ -366,6 +366,7 @@ pub struct ListItem<'a> {
     pub right_text: Option<String>,
     pub dimmed: bool,
     pub highlight_override: bool,
+    pub active: bool,
 }
 
 impl<'a> ListItem<'a> {
@@ -376,7 +377,13 @@ impl<'a> ListItem<'a> {
             right_text: None,
             dimmed: false,
             highlight_override: false,
+            active: false,
         }
+    }
+
+    pub fn active(mut self, active: bool) -> Self {
+        self.active = active;
+        self
     }
 
     pub fn with_icon(mut self, icon: &'a str) -> Self {
@@ -463,6 +470,7 @@ pub struct List<'a, 's> {
     pub dim_color: String,
     pub text_color: String,
     pub primary_color: String,
+    pub active_icon: Option<&'a str>,
     pub state: &'s mut ListState,
 }
 
@@ -474,8 +482,14 @@ impl<'a, 's> List<'a, 's> {
             dim_color: "2".into(),
             text_color: "1;37".into(),
             primary_color: "1;34".into(),
+            active_icon: None,
             state,
         }
+    }
+
+    pub fn with_active_icon(mut self, icon: &'a str) -> Self {
+        self.active_icon = Some(icon);
+        self
     }
 
     pub fn with_colors(mut self, highlight: &str, dim: &str, text: &str, primary: &str) -> Self {
@@ -518,11 +532,22 @@ impl<'a, 's> View for List<'a, 's> {
             }
 
             let mut cur_len = 0;
-            if let Some(icon) = item.icon {
-                terminal.print(&format!("  {} ", icon))?;
-                cur_len += 4;
+            if item.active && self.active_icon.is_some() {
+                if !is_selected {
+                    terminal.set_color(&self.primary_color)?;
+                }
+                terminal.print(&format!("{} ", self.active_icon.unwrap()))?;
+                if !is_selected {
+                    terminal.reset_color()?;
+                }
+                cur_len += 2;
             } else {
                 terminal.print("  ")?;
+                cur_len += 2;
+            }
+
+            if let Some(icon) = item.icon {
+                terminal.print(&format!("{} ", icon))?;
                 cur_len += 2;
             }
 

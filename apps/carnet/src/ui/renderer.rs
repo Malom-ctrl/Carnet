@@ -22,6 +22,7 @@ impl Renderer {
         mode: &Mode,
         search_query: &str,
         selected_id: Option<u64>,
+        active_id: Option<u64>,
         history_state: &mut ListState,
         tool_state: &mut ListState,
         config: &Config,
@@ -90,6 +91,7 @@ impl Renderer {
                 ("k/↑", "Up"),
                 ("j/↓", "Down"),
                 ("p", "Pin"),
+                ("C", "Clear"),
                 ("Bksp", "Delete"),
                 ("Enter", "Copy"),
             ],
@@ -201,6 +203,11 @@ impl Renderer {
                 } else {
                     li = li.dimmed(true);
                 }
+                if let Some(aid) = active_id {
+                    if item.id == aid {
+                        li = li.active(true);
+                    }
+                }
                 list_items.push(li);
             }
         }
@@ -210,12 +217,14 @@ impl Renderer {
         } else {
             history_state
         };
-        let history_list = List::new(list_items, list_state).with_colors(
-            &config.ui_color_highlight,
-            &config.ui_color_dim,
-            "1;37",
-            &primary_color,
-        );
+        let history_list = List::new(list_items, list_state)
+            .with_colors(
+                &config.ui_color_highlight,
+                &config.ui_color_dim,
+                "1;37",
+                &primary_color,
+            )
+            .with_active_icon(&config.ui_icon_prompt);
 
         let list_title = if matches!(mode, Mode::Tools) {
             " Select Tool "

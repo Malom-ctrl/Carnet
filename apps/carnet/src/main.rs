@@ -125,6 +125,7 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                 &mode,
                 &search_query,
                 selected_id,
+                ClipboardManager::capture(&config).map(|c| HistoryManager::calculate_id(&c)),
                 &mut history_state,
                 &mut tool_state,
                 &config,
@@ -196,6 +197,9 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                             let mut h_write = history.lock().unwrap();
                             h_write.toggle_pin(id);
                         }
+                    }
+                    Key::Char('c') | Key::Char('C') => {
+                        ClipboardManager::clear().ok();
                     }
                     Key::Backspace => {
                         if let Some(id) = selected_id {
