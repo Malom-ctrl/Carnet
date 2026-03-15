@@ -44,6 +44,7 @@ fn main() {
 
     bwrap.args(&["--bind", carnet_bin.to_str().unwrap(), "/carnet"]);
 
+    bwrap.arg("--chdir").arg(&home);
     bwrap.arg("--").arg("/carnet");
 
     // Pass all arguments from this process to carnet

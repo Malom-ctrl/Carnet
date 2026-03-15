@@ -37,8 +37,6 @@ pub fn create_base_bwrap_command() -> Command {
         .args(&["--setenv", "HOME", &home])
         .args(&["--setenv", "PATH", "/usr/bin:/bin"])
         .args(&["--setenv", "CARNET_SANDBOXED", "1"])
-        .arg("--chdir")
-        .arg(&home)
         .arg("--proc")
         .arg("/proc")
         .arg("--dev")

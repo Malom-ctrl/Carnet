@@ -15,6 +15,7 @@ fn watch_mode() {
         .join("carnet-preprocess");
 
     let mut cmd = create_base_bwrap_command();
+    cmd.arg("--chdir").arg("/");
 
     cmd.stdout(Stdio::piped());
 

@@ -20,6 +20,7 @@ fn main() {
         let fetch_uris_bin = bin_dir.join("carnet-clipboard-fetch-uris");
         if fetch_uris_bin.exists() {
             let mut bwrap = create_base_bwrap_command();
+            bwrap.arg("--chdir").arg("/");
 
             // Bind helper executable to a known path in sandbox
             bwrap.arg("--bind");
