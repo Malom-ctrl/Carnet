@@ -93,27 +93,28 @@ impl HistoryManager {
             .as_secs();
 
         // 1. Synchronized Update
-        if self.items.contains_key(&id) {
-            // Move existing to front
-            if let Some(pos) = self.order.iter().position(|&x| x == id) {
-                self.order.remove(pos);
-            }
-            if let Some(item) = self.items.get_mut(&id) {
+        match self.items.entry(id) {
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                // Move existing to front
+                if let Some(pos) = self.order.iter().position(|&x| x == id) {
+                    self.order.remove(pos);
+                }
+                let item = entry.get_mut();
                 item.timestamp = timestamp;
                 if is_sensitive {
                     item.is_sensitive = true;
                 }
             }
-        } else {
-            // Insert new
-            let item = HistoryItem {
-                id,
-                content,
-                timestamp,
-                is_pinned: false,
-                is_sensitive,
-            };
-            self.items.insert(id, item);
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                // Insert new
+                entry.insert(HistoryItem {
+                    id,
+                    content,
+                    timestamp,
+                    is_pinned: false,
+                    is_sensitive,
+                });
+            }
         }
         self.order.push_front(id);
 

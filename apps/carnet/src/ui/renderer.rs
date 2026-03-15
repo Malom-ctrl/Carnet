@@ -16,6 +16,7 @@ use term_uikit::widgets::{
 pub struct Renderer;
 
 impl Renderer {
+    #[allow(clippy::too_many_arguments)]
     pub fn render(
         terminal: &mut Terminal,
         history: &Mutex<HistoryManager>,
@@ -203,10 +204,8 @@ impl Renderer {
                 } else {
                     li = li.dimmed(true);
                 }
-                if let Some(aid) = active_id {
-                    if item.id == aid {
-                        li = li.active(true);
-                    }
+                if let Some(aid) = active_id && item.id == aid {
+                    li = li.active(true);
                 }
                 list_items.push(li);
             }

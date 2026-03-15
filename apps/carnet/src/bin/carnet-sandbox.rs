@@ -16,8 +16,8 @@ fn main() {
     let mut bwrap = create_base_bwrap_command();
 
     // Add specific bindings for the main application
-    bwrap.args(&["--bind", &local_share, &local_share]);
-    bwrap.args(&["--bind", &config_dir, &config_dir]);
+    bwrap.args(["--bind", &local_share, &local_share]);
+    bwrap.args(["--bind", &config_dir, &config_dir]);
 
     // Process additional read-only paths from environment variable
     if let Ok(paths) = env::var("CARNET_EXTRA_PATHS") {
@@ -42,7 +42,7 @@ fn main() {
         std::process::exit(1);
     }
 
-    bwrap.args(&["--bind", carnet_bin.to_str().unwrap(), "/carnet"]);
+    bwrap.args(["--bind", carnet_bin.to_str().unwrap(), "/carnet"]);
 
     bwrap.arg("--chdir").arg(&home);
     bwrap.arg("--").arg("/carnet");

@@ -204,10 +204,10 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                     Key::Backspace => {
                         if let Some(id) = selected_id {
                             // Check if the item being deleted is currently in the clipboard
-                            if let Some(current_clipboard) = ClipboardManager::capture(&config) {
-                                if HistoryManager::calculate_id(&current_clipboard) == id {
-                                    let _ = ClipboardManager::clear();
-                                }
+                            if let Some(current_clipboard) = ClipboardManager::capture(&config)
+                                && HistoryManager::calculate_id(&current_clipboard) == id
+                            {
+                                let _ = ClipboardManager::clear();
                             }
 
                             let mut h_write = history.lock().unwrap();
@@ -263,9 +263,7 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                         selected_id = last_item_id;
                     }
                     Key::Up | Key::Char('k') => {
-                        if selected_tool_index > 0 {
-                            selected_tool_index -= 1;
-                        }
+                        selected_tool_index = selected_tool_index.saturating_sub(1);
                     }
                     Key::Down | Key::Char('j') => {
                         selected_tool_index += 1;
@@ -323,19 +321,19 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                                     }
 
                                     let output = child.wait_with_output().ok();
-                                    if let Some(output) = output {
-                                        if output.status.success() && !output.stdout.is_empty() {
-                                            let new_content = if content_type == "text" {
-                                                ClipboardContent::Text(
-                                                    String::from_utf8_lossy(&output.stdout)
-                                                        .to_string(),
-                                                )
-                                            } else {
-                                                ClipboardContent::Image(output.stdout)
-                                            };
+                                    if let Some(output) = output
+                                        && output.status.success()
+                                        && !output.stdout.is_empty()
+                                    {
+                                        let new_content = if content_type == "text" {
+                                            ClipboardContent::Text(
+                                                String::from_utf8_lossy(&output.stdout).to_string(),
+                                            )
+                                        } else {
+                                            ClipboardContent::Image(output.stdout)
+                                        };
 
-                                            ClipboardManager::copy(&new_content, &config).ok();
-                                        }
+                                        ClipboardManager::copy(&new_content, &config).ok();
                                     }
                                 }
                             }

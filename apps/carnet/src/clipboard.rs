@@ -25,10 +25,8 @@ impl ClipboardManager {
             return (Some(ClipboardContent::Image(image_data)), false);
         }
 
-        if config.auto_convert_image_uri {
-            if let Some(image_data) = get_image_from_uri_list() {
-                return (Some(ClipboardContent::Image(image_data)), true);
-            }
+        if config.auto_convert_image_uri && let Some(image_data) = get_image_from_uri_list() {
+            return (Some(ClipboardContent::Image(image_data)), true);
         }
 
         if let Some(text) = Self::get_text() {
@@ -153,7 +151,7 @@ impl ClipboardManager {
 
     fn get_image() -> Option<Vec<u8>> {
         let output = Command::new("wl-paste")
-            .args(&["--type", "image/png"])
+            .args(["--type", "image/png"])
             .output()
             .ok()?;
 
@@ -162,7 +160,7 @@ impl ClipboardManager {
         }
 
         let output = Command::new("wl-paste")
-            .args(&["--type", "image/jpeg"])
+            .args(["--type", "image/jpeg"])
             .output()
             .ok()?;
 
@@ -194,7 +192,7 @@ pub fn get_raw_uri_list_output() -> Option<String> {
     }
 
     let output = Command::new("wl-paste")
-        .args(&["--type", "text/uri-list"])
+        .args(["--type", "text/uri-list"])
         .output()
         .ok()?;
 
@@ -209,8 +207,7 @@ pub fn parse_uri_list(content: &str) -> Vec<String> {
     let mut paths = Vec::new();
     for line in content.lines() {
         let line = line.trim();
-        if line.starts_with("file://") {
-            let path_str = &line[7..];
+        if let Some(path_str) = line.strip_prefix("file://") {
             let decoded_path = decode_uri_path(path_str);
             if !decoded_path.is_empty() {
                 paths.push(decoded_path);
@@ -232,13 +229,12 @@ pub fn filter_image_paths(paths: &[String]) -> Vec<String> {
             if let Ok(mut file) = fs::File::open(path) {
                 use std::io::Read;
                 let mut magic = [0u8; 8];
-                if file.read_exact(&mut magic).is_ok() {
-                    if magic.starts_with(&[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) || // PNG
-                       magic.starts_with(&[0xFF, 0xD8, 0xFF])
+                if file.read_exact(&mut magic).is_ok()
+                    && (magic.starts_with(&[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) || // PNG
+                       magic.starts_with(&[0xFF, 0xD8, 0xFF]))
                     // JPEG
-                    {
-                        valid_paths.push(decoded_path.clone());
-                    }
+                {
+                    valid_paths.push(decoded_path.clone());
                 }
             }
         }
@@ -267,15 +263,13 @@ pub fn decode_uri_path(path: &str) -> String {
             if let Some(h2) = chars.next() {
                 hex.push(h2);
             }
-            if hex.len() == 2 {
-                if let Ok(byte) = u8::from_str_radix(&hex, 16) {
-                    // Reject null and newline characters to prevent path injection
-                    if byte == 0 || byte == b'\n' || byte == b'\r' {
-                        return String::new();
-                    }
-                    bytes.push(byte);
-                    continue;
+            if hex.len() == 2 && let Ok(byte) = u8::from_str_radix(&hex, 16) {
+                // Reject null and newline characters to prevent path injection
+                if byte == 0 || byte == b'\n' || byte == b'\r' {
+                    return String::new();
                 }
+                bytes.push(byte);
+                continue;
             }
             bytes.push(b'%');
             bytes.extend_from_slice(hex.as_bytes());

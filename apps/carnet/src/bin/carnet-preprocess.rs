@@ -34,27 +34,25 @@ fn main() {
             // Capture output
             let output = bwrap.output().ok();
 
-            if let Some(output) = output {
-                if output.status.success() {
-                    let content = String::from_utf8_lossy(&output.stdout);
-                    let paths = clipboard::parse_uri_list(&content);
-                    // Filter paths on host (checks file existence and magic numbers)
-                    let valid_paths = clipboard::filter_image_paths(&paths);
+            if let Some(output) = output && output.status.success() {
+                let content = String::from_utf8_lossy(&output.stdout);
+                let paths = clipboard::parse_uri_list(&content);
+                // Filter paths on host (checks file existence and magic numbers)
+                let valid_paths = clipboard::filter_image_paths(&paths);
 
-                    if !valid_paths.is_empty() {
-                        cmd.arg("--convert");
-                        let new_paths = valid_paths.join("\n");
-                        let final_paths = if let Ok(existing) = env::var("CARNET_EXTRA_PATHS") {
-                            if existing.is_empty() {
-                                new_paths
-                            } else {
-                                format!("{}\n{}", existing, new_paths)
-                            }
-                        } else {
+                if !valid_paths.is_empty() {
+                    cmd.arg("--convert");
+                    let new_paths = valid_paths.join("\n");
+                    let final_paths = if let Ok(existing) = env::var("CARNET_EXTRA_PATHS") {
+                        if existing.is_empty() {
                             new_paths
-                        };
-                        cmd.env("CARNET_EXTRA_PATHS", final_paths);
-                    }
+                        } else {
+                            format!("{}\n{}", existing, new_paths)
+                        }
+                    } else {
+                        new_paths
+                    };
+                    cmd.env("CARNET_EXTRA_PATHS", final_paths);
                 }
             }
         } else {

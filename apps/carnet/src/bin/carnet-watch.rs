@@ -31,13 +31,11 @@ fn watch_mode() {
 
     if let Some(stdout) = child.stdout.take() {
         let reader = BufReader::new(stdout);
-        for line in reader.lines() {
-            if let Ok(l) = line {
-                if l.trim() == "change" {
-                    let _ = Command::new(&preprocess_bin)
-                        .spawn()
-                        .and_then(|mut c| c.wait());
-                }
+        for l in reader.lines().map_while(Result::ok) {
+            if l.trim() == "change" {
+                let _ = Command::new(&preprocess_bin)
+                    .spawn()
+                    .and_then(|mut c| c.wait());
             }
         }
     }
