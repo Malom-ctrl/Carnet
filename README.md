@@ -30,7 +30,7 @@ Carnet relies on several system utilities and libraries to maintain its security
 ### Installation
 You can install from the source by running: 
 ~~~bash
-git clone ...
+git clone https://github.com/Malom-ctrl/Carnet.git
 cd Carnet/
 cargo install --path apps/carnet/
 ~~~
