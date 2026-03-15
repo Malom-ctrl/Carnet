@@ -145,6 +145,15 @@ impl<'a> Card<'a> {
             content: None,
         }
     }
+}
+
+impl<'a> Default for Card<'a> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<'a> Card<'a> {
 
     pub fn with_title(mut self, title: impl Into<String>) -> Self {
         self.title = Some(title.into());
@@ -224,7 +233,7 @@ impl<'a> View for Card<'a> {
             .map(|s| s.chars().collect())
             .unwrap_or_else(|| "╭╮╰╯─│".chars().collect());
 
-        let c_tl = b_chars.get(0).unwrap_or(&'╭');
+        let c_tl = b_chars.first().unwrap_or(&'╭');
         let c_tr = b_chars.get(1).unwrap_or(&'╮');
         let c_bl = b_chars.get(2).unwrap_or(&'╰');
         let c_br = b_chars.get(3).unwrap_or(&'╯');
@@ -259,19 +268,19 @@ impl<'a> View for Card<'a> {
             terminal.print(&c_v.to_string())?;
         }
 
-        if let Some(txt) = &self.title {
-            if area.width > (txt.len() as u16 + 4) {
-                terminal.move_to(area.y, area.x + 2)?;
-                terminal.print(" ")?;
-                terminal.set_color(&self.text_color)?;
-                terminal.print(txt)?;
-                if self.active {
-                    terminal.set_color(&self.primary_color)?;
-                } else {
-                    terminal.set_color(&self.dim_color)?;
-                }
-                terminal.print(" ")?;
+        if let Some(txt) = &self.title
+            && area.width > (txt.len() as u16 + 4)
+        {
+            terminal.move_to(area.y, area.x + 2)?;
+            terminal.print(" ")?;
+            terminal.set_color(&self.text_color)?;
+            terminal.print(txt)?;
+            if self.active {
+                terminal.set_color(&self.primary_color)?;
+            } else {
+                terminal.set_color(&self.dim_color)?;
             }
+            terminal.print(" ")?;
         }
         terminal.reset_color()?;
 
@@ -314,7 +323,7 @@ impl<'a> ActionBar<'a> {
         let mut current_y = 0;
         let gap = 2;
 
-        for (_i, (key, desc)) in self.items.iter().enumerate() {
+        for (key, desc) in self.items.iter() {
             let item_width = key.len() + 1 + desc.len(); // key + ":" + desc
 
             // Check if we need to wrap.
@@ -532,11 +541,11 @@ impl<'a, 's> View for List<'a, 's> {
             }
 
             let mut cur_len = 0;
-            if item.active && self.active_icon.is_some() {
+            if item.active && let Some(icon) = self.active_icon {
                 if !is_selected {
                     terminal.set_color(&self.primary_color)?;
                 }
-                terminal.print(&format!("{} ", self.active_icon.unwrap()))?;
+                terminal.print(&format!("{} ", icon))?;
                 if !is_selected {
                     terminal.reset_color()?;
                 }
@@ -612,6 +621,15 @@ impl<'a> Input<'a> {
             text_color: "1;37".into(),
         }
     }
+}
+
+impl<'a> Default for Input<'a> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<'a> Input<'a> {
 
     pub fn with_value(mut self, value: &'a str) -> Self {
         self.value = value;

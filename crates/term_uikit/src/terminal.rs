@@ -116,10 +116,11 @@ impl Terminal {
         };
 
         unsafe {
-            if libc::ioctl(io::stdout().as_raw_fd(), libc::TIOCGWINSZ, &mut winsize) == 0 {
-                if winsize.ws_row > 0 && winsize.ws_col > 0 {
-                    return (winsize.ws_row, winsize.ws_col);
-                }
+            if libc::ioctl(io::stdout().as_raw_fd(), libc::TIOCGWINSZ, &mut winsize) == 0
+                && winsize.ws_row > 0
+                && winsize.ws_col > 0
+            {
+                return (winsize.ws_row, winsize.ws_col);
             }
         }
 
