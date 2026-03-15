@@ -203,6 +203,13 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                     }
                     Key::Backspace => {
                         if let Some(id) = selected_id {
+                            // Check if the item being deleted is currently in the clipboard
+                            if let Some(current_clipboard) = ClipboardManager::capture(&config) {
+                                if HistoryManager::calculate_id(&current_clipboard) == id {
+                                    let _ = ClipboardManager::clear();
+                                }
+                            }
+
                             let mut h_write = history.lock().unwrap();
                             h_write.delete(id);
                             selected_id = None;
