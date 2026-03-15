@@ -51,7 +51,10 @@ impl ClipboardManager {
     /// Clears both regular and primary clipboards.
     pub fn clear() -> std::io::Result<()> {
         Command::new("wl-copy").arg("--clear").status()?;
-        Command::new("wl-copy").arg("--primary").arg("--clear").status()?;
+        Command::new("wl-copy")
+            .arg("--primary")
+            .arg("--clear")
+            .status()?;
         Ok(())
     }
 
@@ -181,6 +184,15 @@ fn get_image_from_uri_list() -> Option<Vec<u8>> {
 }
 
 pub fn get_image_paths_from_uri_list() -> Vec<String> {
+    if let Ok(output) = Command::new("wl-paste").arg("--list-types").output() {
+        let types = String::from_utf8_lossy(&output.stdout);
+        if !types.contains("text/uri-list") {
+            return Vec::new();
+        }
+    } else {
+        return Vec::new();
+    }
+
     let output = Command::new("wl-paste")
         .args(&["--type", "text/uri-list"])
         .output()
@@ -209,7 +221,8 @@ pub fn get_image_paths_from_uri_list() -> Vec<String> {
                             let mut magic = [0u8; 8];
                             if file.read_exact(&mut magic).is_ok() {
                                 if magic.starts_with(&[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) || // PNG
-                                   magic.starts_with(&[0xFF, 0xD8, 0xFF]) // JPEG
+                                   magic.starts_with(&[0xFF, 0xD8, 0xFF])
+                                // JPEG
                                 {
                                     paths.push(decoded_path);
                                 }
