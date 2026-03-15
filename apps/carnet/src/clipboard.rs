@@ -183,57 +183,76 @@ fn get_image_from_uri_list() -> Option<Vec<u8>> {
     None
 }
 
-pub fn get_image_paths_from_uri_list() -> Vec<String> {
+pub fn get_raw_uri_list_output() -> Option<String> {
     if let Ok(output) = Command::new("wl-paste").arg("--list-types").output() {
         let types = String::from_utf8_lossy(&output.stdout);
         if !types.contains("text/uri-list") {
-            return Vec::new();
+            return None;
         }
     } else {
-        return Vec::new();
+        return None;
     }
 
     let output = Command::new("wl-paste")
         .args(&["--type", "text/uri-list"])
         .output()
-        .ok();
+        .ok()?;
 
+    if output.status.success() {
+        Some(String::from_utf8_lossy(&output.stdout).to_string())
+    } else {
+        None
+    }
+}
+
+pub fn parse_uri_list(content: &str) -> Vec<String> {
     let mut paths = Vec::new();
-    if let Some(output) = output {
-        if output.status.success() {
-            let content = String::from_utf8_lossy(&output.stdout);
-            for line in content.lines() {
-                let line = line.trim();
-                if line.starts_with("file://") {
-                    let path_str = &line[7..];
-                    let decoded_path = decode_uri_path(path_str);
-                    if decoded_path.is_empty() {
-                        continue;
-                    }
-                    let path = std::path::Path::new(&decoded_path);
-                    if let Ok(meta) = fs::metadata(path) {
-                        if !meta.is_file() {
-                            continue;
-                        }
-                        // Check magic numbers to verify it is an image
-                        if let Ok(mut file) = fs::File::open(path) {
-                            use std::io::Read;
-                            let mut magic = [0u8; 8];
-                            if file.read_exact(&mut magic).is_ok() {
-                                if magic.starts_with(&[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) || // PNG
-                                   magic.starts_with(&[0xFF, 0xD8, 0xFF])
-                                // JPEG
-                                {
-                                    paths.push(decoded_path);
-                                }
-                            }
-                        }
+    for line in content.lines() {
+        let line = line.trim();
+        if line.starts_with("file://") {
+            let path_str = &line[7..];
+            let decoded_path = decode_uri_path(path_str);
+            if !decoded_path.is_empty() {
+                paths.push(decoded_path);
+            }
+        }
+    }
+    paths
+}
+
+pub fn filter_image_paths(paths: &[String]) -> Vec<String> {
+    let mut valid_paths = Vec::new();
+    for decoded_path in paths {
+        let path = std::path::Path::new(&decoded_path);
+        if let Ok(meta) = fs::metadata(path) {
+            if !meta.is_file() {
+                continue;
+            }
+            // Check magic numbers to verify it is an image
+            if let Ok(mut file) = fs::File::open(path) {
+                use std::io::Read;
+                let mut magic = [0u8; 8];
+                if file.read_exact(&mut magic).is_ok() {
+                    if magic.starts_with(&[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) || // PNG
+                       magic.starts_with(&[0xFF, 0xD8, 0xFF])
+                    // JPEG
+                    {
+                        valid_paths.push(decoded_path.clone());
                     }
                 }
             }
         }
     }
-    paths
+    valid_paths
+}
+
+pub fn get_image_paths_from_uri_list() -> Vec<String> {
+    if let Some(content) = get_raw_uri_list_output() {
+        let paths = parse_uri_list(&content);
+        filter_image_paths(&paths)
+    } else {
+        Vec::new()
+    }
 }
 
 pub fn decode_uri_path(path: &str) -> String {
