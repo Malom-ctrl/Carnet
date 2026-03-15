@@ -91,7 +91,7 @@ impl Renderer {
                 ("k/↑", "Up"),
                 ("j/↓", "Down"),
                 ("p", "Pin"),
-                ("C", "Clear"),
+                ("c", "Clear"),
                 ("Bksp", "Delete"),
                 ("Enter", "Copy"),
             ],

@@ -1,15 +1,15 @@
-use carnet::clipboard::{ClipboardManager, ClipboardContent};
+use carnet::clipboard::{ClipboardContent, ClipboardManager};
 use carnet::config::{Config, Tool};
 use carnet::history::HistoryManager;
 use carnet::ui::Terminal;
 use carnet::ui::renderer::Renderer;
-use carnet::ui::{Mode, InputHandler, Key, fuzzy_match};
+use carnet::ui::{InputHandler, Key, Mode, fuzzy_match};
 use std::io::{self, Write};
+use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::Duration;
 use term_uikit::widgets::{Input, ListState};
-use std::process::{Command, Stdio};
 
 fn main() -> std::io::Result<()> {
     if std::env::var("CARNET_SANDBOXED").is_err() {
@@ -198,7 +198,7 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                             h_write.toggle_pin(id);
                         }
                     }
-                    Key::Char('c') | Key::Char('C') => {
+                    Key::Char('c') => {
                         ClipboardManager::clear().ok();
                     }
                     Key::Backspace => {
@@ -331,9 +331,7 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                                                         .to_string(),
                                                 )
                                             } else {
-                                                ClipboardContent::Image(
-                                                    output.stdout,
-                                                )
+                                                ClipboardContent::Image(output.stdout)
                                             };
 
                                             ClipboardManager::copy(&new_content, &config).ok();
