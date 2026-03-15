@@ -242,7 +242,9 @@ impl HistoryManager {
                     writer.write_all(&[type_byte]).ok();
                     writer.write_all(&item.timestamp.to_le_bytes()).ok();
                     writer.write_all(&[if item.is_pinned { 1 } else { 0 }]).ok();
-                    writer.write_all(&[if item.is_sensitive { 1 } else { 0 }]).ok();
+                    writer
+                        .write_all(&[if item.is_sensitive { 1 } else { 0 }])
+                        .ok();
                     writer.write_all(&(data.len() as u32).to_le_bytes()).ok();
                     writer.write_all(data).ok();
                 }
