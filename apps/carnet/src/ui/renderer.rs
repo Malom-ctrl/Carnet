@@ -8,9 +8,10 @@ use std::time::SystemTime;
 use term_uikit::Terminal;
 use term_uikit::image_proc::ImageProcessor;
 use term_uikit::layout::Rect;
+use crate::ui::preview::PreviewResult;
 use term_uikit::widgets::{
     ActionBar, Card, EmptyView, Flex, ImageView, Input, List, ListItem, ListState, Sizing,
-    TextView, View,
+    TextView, View, Spinner,
 };
 
 pub struct Renderer;
@@ -27,6 +28,7 @@ impl Renderer {
         history_state: &mut ListState,
         tool_state: &mut ListState,
         config: &Config,
+        preview_result: Option<PreviewResult>,
     ) -> io::Result<()> {
         // --- DATA GATHERING ---
         let h_lock = history.lock().unwrap();
@@ -241,8 +243,16 @@ impl Renderer {
             .content(history_list);
 
         // Preview Content
-        let preview_view: Box<dyn View> = if let Some(selected) = filtered_items.get(selected_index)
-        {
+        let preview_view: Box<dyn View> = if let Some(result) = &preview_result {
+            match result {
+                PreviewResult::Loading => Box::new(Spinner::new().with_color(&primary_color)),
+                PreviewResult::Success(content) => match content {
+                    ClipboardContent::Text(text) => Box::new(TextView::new(text.clone())),
+                    ClipboardContent::Image(data) => Box::new(ImageView::new(data)),
+                },
+                PreviewResult::Error(err) => Box::new(TextView::new(format!("Error: {}", err))),
+            }
+        } else if let Some(selected) = filtered_items.get(selected_index) {
             if selected.is_sensitive {
                 Box::new(TextView::new(" [ CONTENT MASKED ] "))
             } else {

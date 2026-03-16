@@ -772,3 +772,50 @@ impl View for EmptyView {
         Ok(())
     }
 }
+
+pub struct Spinner {
+    pub color: String,
+}
+
+impl Spinner {
+    pub fn new() -> Self {
+        Self {
+            color: "1;37".into(),
+        }
+    }
+
+    pub fn with_color(mut self, color: &str) -> Self {
+        self.color = color.into();
+        self
+    }
+}
+
+impl Default for Spinner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl View for Spinner {
+    fn measure(&self, _width: Option<u16>, _height: Option<u16>) -> (u16, u16) {
+        (1, 1)
+    }
+
+    fn render(&mut self, area: Rect, terminal: &mut Terminal) -> io::Result<()> {
+        let frames = vec!["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        let frame = frames[(now / 100 % frames.len() as u128) as usize];
+
+        let cx = area.x + area.width / 2;
+        let cy = area.y + area.height / 2;
+
+        terminal.move_to(cy, cx)?;
+        terminal.set_color(&self.color)?;
+        terminal.print(frame)?;
+        terminal.reset_color()?;
+        Ok(())
+    }
+}

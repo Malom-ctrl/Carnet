@@ -3,6 +3,7 @@ use carnet::config::{Config, Tool};
 use carnet::history::HistoryManager;
 use carnet::ui::Terminal;
 use carnet::ui::renderer::Renderer;
+use carnet::ui::preview::{PreviewManager, PreviewResult};
 use carnet::ui::{InputHandler, Key, Mode, fuzzy_match};
 use std::io::{self, Write};
 use std::process::{Command, Stdio};
@@ -95,8 +96,13 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
 
     let mut last_size = terminal.size();
     let mut should_render = true;
+    let mut preview_manager = PreviewManager::new();
 
     loop {
+        if preview_manager.poll() {
+            should_render = true;
+        }
+
         {
             let mut h = history.lock().unwrap();
             if h.refresh() {
@@ -124,6 +130,50 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
             history_state.select(current_idx);
             tool_state.select(selected_tool_index);
 
+            let preview_result = if matches!(mode, Mode::Tools) {
+                let selected_item = {
+                    let h = history.lock().unwrap();
+                    let filtered = h.get_filtered("");
+                    if let Some(id) = last_item_id {
+                        filtered.iter().find(|i| i.id == id).map(|&i| i.clone())
+                    } else {
+                        filtered.first().map(|&i| i.clone())
+                    }
+                };
+
+                if let Some(item) = selected_item {
+                    let content_type = match item.content {
+                        ClipboardContent::Text(_) => "text",
+                        ClipboardContent::Image(_) => "image",
+                    };
+
+                    let filtered_tools: Vec<&Tool> = config
+                        .tools
+                        .iter()
+                        .filter(|tool| {
+                            let tool_ctx = tool.content_type.to_lowercase();
+                            (tool_ctx == "both" || tool_ctx == content_type)
+                                && fuzzy_match(&search_query, &tool.name)
+                        })
+                        .collect();
+
+                    if !filtered_tools.is_empty() {
+                        let tool = filtered_tools[selected_tool_index % filtered_tools.len()];
+                        if tool.preview {
+                            Some(preview_manager.get_preview(tool, &item.content))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
             Renderer::render(
                 &mut terminal,
                 &history,
@@ -134,6 +184,7 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                 &mut history_state,
                 &mut tool_state,
                 &config,
+                preview_result,
             )?;
             should_render = false;
         }
@@ -184,6 +235,7 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                         search_query.clear();
                         selected_tool_index = 0;
                         last_item_id = selected_id;
+                        preview_manager.clear();
                     }
                     Key::Up | Key::Char('k') => {
                         if current_index > 0 {
@@ -277,6 +329,7 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                         mode = Mode::Normal;
                         search_query.clear();
                         selected_id = last_item_id;
+                        preview_manager.clear();
                     }
                     Key::Up | Key::Char('k') => {
                         selected_tool_index = selected_tool_index.saturating_sub(1);
@@ -316,40 +369,52 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                                 let tool =
                                     filtered_tools[selected_tool_index % filtered_tools.len()];
 
-                                let child = Command::new("sh")
-                                    .arg("-c")
-                                    .arg(&tool.bin)
-                                    .stdin(Stdio::piped())
-                                    .stdout(Stdio::piped())
-                                    .spawn()
-                                    .ok();
+                                // Check if we have a cached result
+                                let mut cached_result = None;
+                                if tool.preview {
+                                    if let PreviewResult::Success(content) = preview_manager.get_preview(tool, &item.content) {
+                                        cached_result = Some(content);
+                                    }
+                                }
 
-                                if let Some(mut child) = child {
-                                    if let Some(mut stdin) = child.stdin.take() {
-                                        match &item.content {
-                                            ClipboardContent::Text(t) => {
-                                                stdin.write_all(t.as_bytes()).ok();
-                                            }
-                                            ClipboardContent::Image(d) => {
-                                                stdin.write_all(d).ok();
+                                if let Some(content) = cached_result {
+                                    ClipboardManager::copy(&content, &config).ok();
+                                } else {
+                                    let child = Command::new("sh")
+                                        .arg("-c")
+                                        .arg(&tool.bin)
+                                        .stdin(Stdio::piped())
+                                        .stdout(Stdio::piped())
+                                        .spawn()
+                                        .ok();
+
+                                    if let Some(mut child) = child {
+                                        if let Some(mut stdin) = child.stdin.take() {
+                                            match &item.content {
+                                                ClipboardContent::Text(t) => {
+                                                    stdin.write_all(t.as_bytes()).ok();
+                                                }
+                                                ClipboardContent::Image(d) => {
+                                                    stdin.write_all(d).ok();
+                                                }
                                             }
                                         }
-                                    }
 
-                                    let output = child.wait_with_output().ok();
-                                    if let Some(output) = output
-                                        && output.status.success()
-                                        && !output.stdout.is_empty()
-                                    {
-                                        let new_content = if content_type == "text" {
-                                            ClipboardContent::Text(
-                                                String::from_utf8_lossy(&output.stdout).to_string(),
-                                            )
-                                        } else {
-                                            ClipboardContent::Image(output.stdout)
-                                        };
+                                        let output = child.wait_with_output().ok();
+                                        if let Some(output) = output
+                                            && output.status.success()
+                                            && !output.stdout.is_empty()
+                                        {
+                                            let new_content = if content_type == "text" {
+                                                ClipboardContent::Text(
+                                                    String::from_utf8_lossy(&output.stdout).to_string(),
+                                                )
+                                            } else {
+                                                ClipboardContent::Image(output.stdout)
+                                            };
 
-                                        ClipboardManager::copy(&new_content, &config).ok();
+                                            ClipboardManager::copy(&new_content, &config).ok();
+                                        }
                                     }
                                 }
                             }
@@ -357,6 +422,7 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                         mode = Mode::Normal;
                         search_query.clear();
                         selected_id = None; // Reset to top
+                        preview_manager.clear();
                     }
                     _ => {
                         if Input::handle_event(&mut search_query, key) {

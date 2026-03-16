@@ -6,6 +6,7 @@ pub struct Tool {
     pub name: String,
     pub bin: String,
     pub content_type: String, // "text", "image", "both"
+    pub preview: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -95,20 +96,21 @@ REFRESH_RATE_MS=200
 CLIPBOARD_SYNC_DELAY_MS=100
 
 # --- Tools ---
-# Format: TOOL_NAME = Display Name | command to run | context
+# Format: TOOL_NAME = Display Name | command to run | context | preview
 # context: text, image, both (default)
+# preview: "preview" (optional) to enable live preview
 
 # Text Tools
-TOOL_UPPER = Upper Case | tr '[:lower:]' '[:upper:]' | text
-TOOL_LOWER = Lower Case | tr '[:upper:]' '[:lower:]' | text
-TOOL_B64_ENC = Base64 Encode | base64 | text
-TOOL_B64_DEC = Base64 Decode | base64 -d | text
-TOOL_STRIP = Remove Formatting | tr -d '\n\r\t' | text
-TOOL_TRIM = Trim Whitespace | xargs | text
-TOOL_JSON_PP = JSON Pretty Print | jq . | text
-TOOL_WC = Word Count | wc -w | text
-TOOL_SORT = Sort Lines | sort | text
-TOOL_UNIQ = Unique Lines | sort | uniq | text
+TOOL_UPPER = Upper Case | tr '[:lower:]' '[:upper:]' | text | preview
+TOOL_LOWER = Lower Case | tr '[:upper:]' '[:lower:]' | text | preview
+TOOL_B64_ENC = Base64 Encode | base64 | text | preview
+TOOL_B64_DEC = Base64 Decode | base64 -d | text | preview
+TOOL_STRIP = Remove Formatting | tr -d '\n\r\t' | text | preview
+TOOL_TRIM = Trim Whitespace | xargs | text | preview
+TOOL_JSON_PP = JSON Pretty Print | jq . | text | preview
+TOOL_WC = Word Count | wc -w | text | preview
+TOOL_SORT = Sort Lines | sort | text | preview
+TOOL_UNIQ = Unique Lines | sort | uniq | text | preview
 "#;
 
 impl Config {
@@ -209,6 +211,10 @@ impl Config {
                                             .unwrap_or(&"both")
                                             .trim()
                                             .to_lowercase(),
+                                        preview: parts
+                                            .get(3)
+                                            .map(|s| s.trim().to_lowercase() == "preview")
+                                            .unwrap_or(false),
                                     });
                                 }
                             }
