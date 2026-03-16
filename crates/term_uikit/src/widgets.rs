@@ -495,6 +495,7 @@ impl<'a> ListItem<'a> {
 pub struct ListState {
     pub selected: usize,
     pub offset: usize,
+    pub visible_height: usize,
 }
 
 impl ListState {
@@ -502,6 +503,7 @@ impl ListState {
         Self {
             selected: 0,
             offset: 0,
+            visible_height: 0,
         }
     }
 
@@ -522,6 +524,16 @@ impl ListState {
     pub fn scroll_down(&mut self, total_items: usize) {
         if total_items > 0 && self.selected < total_items - 1 {
             self.selected += 1;
+        }
+    }
+
+    pub fn scroll_page_up(&mut self) {
+        self.selected = self.selected.saturating_sub(self.visible_height);
+    }
+
+    pub fn scroll_page_down(&mut self, total_items: usize) {
+        if total_items > 0 {
+            self.selected = (self.selected + self.visible_height).min(total_items - 1);
         }
     }
 
@@ -592,6 +604,7 @@ impl<'a, 's> View for List<'a, 's> {
 
     fn render(&mut self, area: Rect, terminal: &mut Terminal) -> io::Result<()> {
         let max_display = area.height as usize;
+        self.state.visible_height = max_display;
         if max_display == 0 {
             return Ok(());
         }
@@ -799,16 +812,23 @@ impl ParagraphState {
         self.scroll = self.scroll.saturating_sub(amount);
     }
 
-    pub fn scroll_down(&mut self, amount: usize, visible_height: Option<usize>) {
-        let v_height = visible_height.unwrap_or(self.visible_height);
-        if v_height == 0 {
+    pub fn scroll_down(&mut self, amount: usize) {
+        if self.visible_height == 0 {
             return;
         }
 
-        let max_scroll = self.total_lines.saturating_sub(v_height);
+        let max_scroll = self.total_lines.saturating_sub(self.visible_height);
         if self.scroll < max_scroll {
             self.scroll = (self.scroll + amount).min(max_scroll);
         }
+    }
+
+    pub fn scroll_page_up(&mut self) {
+        self.scroll_up(self.visible_height);
+    }
+
+    pub fn scroll_page_down(&mut self) {
+        self.scroll_down(self.visible_height);
     }
 
     pub fn reset(&mut self) {

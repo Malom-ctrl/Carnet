@@ -300,7 +300,7 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                     }
                     Key::Down | Key::Char('j') => {
                         if preview_focused {
-                            preview_state.scroll_down(1, None);
+                            preview_state.scroll_down(1);
                         } else if current_index < filtered_ids_and_content.len().saturating_sub(1) {
                             let new_index = current_index + 1;
                             selected_id = Some(filtered_ids_and_content[new_index].0);
@@ -308,14 +308,23 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                     }
                     Key::PageUp => {
                         if preview_focused {
-                            let page_size = terminal.size().0.saturating_sub(4) as usize;
-                            preview_state.scroll_up(page_size);
+                            preview_state.scroll_page_up();
+                        } else {
+                            let new_index = current_index.saturating_sub(history_state.visible_height);
+                            if let Some((id, _)) = filtered_ids_and_content.get(new_index) {
+                                selected_id = Some(*id);
+                            }
                         }
                     }
                     Key::PageDown => {
                         if preview_focused {
-                            let page_size = terminal.size().0.saturating_sub(4) as usize;
-                            preview_state.scroll_down(page_size, Some(page_size));
+                            preview_state.scroll_page_down();
+                        } else {
+                            let new_index = (current_index + history_state.visible_height)
+                                .min(filtered_ids_and_content.len().saturating_sub(1));
+                            if let Some((id, _)) = filtered_ids_and_content.get(new_index) {
+                                selected_id = Some(*id);
+                            }
                         }
                     }
                     Key::Char('p') => {
@@ -386,6 +395,19 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                             selected_id = Some(filtered_ids_and_content[new_index].0);
                         }
                     }
+                    Key::PageUp => {
+                        let new_index = current_index.saturating_sub(history_state.visible_height);
+                        if let Some((id, _)) = filtered_ids_and_content.get(new_index) {
+                            selected_id = Some(*id);
+                        }
+                    }
+                    Key::PageDown => {
+                        let new_index = (current_index + history_state.visible_height)
+                            .min(filtered_ids_and_content.len().saturating_sub(1));
+                        if let Some((id, _)) = filtered_ids_and_content.get(new_index) {
+                            selected_id = Some(*id);
+                        }
+                    }
                     Key::Enter => {
                         mode = Mode::Normal;
                     }
@@ -410,14 +432,28 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                     }
                     Key::PageUp => {
                         if preview_focused {
-                            let page_size = terminal.size().0.saturating_sub(4) as usize;
-                            preview_state.scroll_up(page_size);
+                            preview_state.scroll_page_up();
+                        } else {
+                            selected_tool_index = selected_tool_index.saturating_sub(tool_state.visible_height);
                         }
                     }
                     Key::PageDown => {
                         if preview_focused {
-                            let page_size = terminal.size().0.saturating_sub(4) as usize;
-                            preview_state.scroll_down(page_size, Some(page_size));
+                            preview_state.scroll_page_down();
+                        } else {
+                            let selected_item = get_selected_item(&history, last_item_id);
+                            if let Some(item) = selected_item {
+                                let content_type = match item.content {
+                                    ClipboardContent::Text(_) => "text",
+                                    ClipboardContent::Image(_) => "image",
+                                };
+                                let filtered_tools =
+                                    get_filtered_tools(&config, content_type, &search_query);
+                                if !filtered_tools.is_empty() {
+                                    selected_tool_index = (selected_tool_index + tool_state.visible_height)
+                                        .min(filtered_tools.len().saturating_sub(1));
+                                }
+                            }
                         }
                     }
                     Key::Up | Key::Char('k') => {
@@ -429,7 +465,7 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                     }
                     Key::Down | Key::Char('j') => {
                         if preview_focused {
-                            preview_state.scroll_down(1, None);
+                            preview_state.scroll_down(1);
                         } else {
                             let selected_item = get_selected_item(&history, last_item_id);
                             if let Some(item) = selected_item {
