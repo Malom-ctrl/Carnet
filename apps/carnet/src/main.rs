@@ -37,7 +37,12 @@ fn main() -> std::io::Result<()> {
 }
 
 fn store_command(config: Config, convert: bool) -> io::Result<()> {
-    let (content, is_converted) = ClipboardManager::capture_with_conversion(&config);
+    let (content, is_converted) = if convert && config.auto_convert_image_uri {
+        ClipboardManager::capture_with_uri_conversion()
+    } else {
+        (ClipboardManager::capture(), false)
+    };
+
     if let Some(content) = content {
         let mut history = HistoryManager::new(config.clone());
         let is_sensitive = std::env::var("CLIPBOARD_STATE")
@@ -58,7 +63,7 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
 
     // Initial selected_id: current clipboard content
     let mut selected_id: Option<u64> =
-        ClipboardManager::capture(&config).map(|c| HistoryManager::calculate_id(&c));
+        ClipboardManager::capture().map(|c| HistoryManager::calculate_id(&c));
 
     // Ensure selected_id exists in history, otherwise default to None (will be first item)
     if let Some(id) = selected_id {
@@ -125,7 +130,7 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                 &mode,
                 &search_query,
                 selected_id,
-                ClipboardManager::capture(&config).map(|c| HistoryManager::calculate_id(&c)),
+                ClipboardManager::capture().map(|c| HistoryManager::calculate_id(&c)),
                 &mut history_state,
                 &mut tool_state,
                 &config,
@@ -204,7 +209,7 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                     Key::Backspace => {
                         if let Some(id) = selected_id {
                             // Check if the item being deleted is currently in the clipboard
-                            if let Some(current_clipboard) = ClipboardManager::capture(&config)
+                            if let Some(current_clipboard) = ClipboardManager::capture()
                                 && HistoryManager::calculate_id(&current_clipboard) == id
                             {
                                 let _ = ClipboardManager::clear();

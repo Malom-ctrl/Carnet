@@ -3,6 +3,7 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
 use std::process::{Command, Stdio};
+use term_uikit::image_format::{SUPPORTED_IMAGE_FORMATS, detect_mime};
 
 /// Represent the content type captured from the clipboard.
 #[derive(Debug, Clone)]
@@ -15,19 +16,24 @@ pub enum ClipboardContent {
 pub struct ClipboardManager;
 
 impl ClipboardManager {
-    pub fn capture(config: &Config) -> Option<ClipboardContent> {
-        let (content, _) = Self::capture_with_conversion(config);
-        content
+    pub fn capture() -> Option<ClipboardContent> {
+        if let Some(image_data) = Self::get_image() {
+            return Some(ClipboardContent::Image(image_data));
+        }
+
+        if let Some(text) = Self::get_text() {
+            return Some(ClipboardContent::Text(text));
+        }
+
+        None
     }
 
-    pub fn capture_with_conversion(config: &Config) -> (Option<ClipboardContent>, bool) {
+    pub fn capture_with_uri_conversion() -> (Option<ClipboardContent>, bool) {
         if let Some(image_data) = Self::get_image() {
             return (Some(ClipboardContent::Image(image_data)), false);
         }
 
-        if config.auto_convert_image_uri
-            && let Some(image_data) = get_image_from_uri_list()
-        {
+        if let Some(image_data) = get_image_from_uri_list() {
             return (Some(ClipboardContent::Image(image_data)), true);
         }
 
@@ -65,16 +71,7 @@ impl ClipboardManager {
     ) -> std::io::Result<()> {
         let (mime, data) = match content {
             ClipboardContent::Text(text) => ("text/plain", text.as_bytes().to_vec()),
-            ClipboardContent::Image(data) => {
-                let mime = if data.starts_with(&[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) {
-                    "image/png"
-                } else if data.starts_with(&[0xFF, 0xD8, 0xFF]) {
-                    "image/jpeg"
-                } else {
-                    "image/png"
-                };
-                (mime, data.clone())
-            }
+            ClipboardContent::Image(data) => (detect_mime(data), data.clone()),
         };
 
         if data.is_empty() {
@@ -140,6 +137,15 @@ impl ClipboardManager {
     }
 
     fn get_text() -> Option<String> {
+        let types = get_available_types();
+        let has_text = types
+            .iter()
+            .any(|t| t.starts_with("text/") || t == "STRING" || t == "UTF8_STRING");
+
+        if !has_text {
+            return None;
+        }
+
         let output = Command::new("wl-paste").arg("--no-newline").output().ok()?;
 
         if output.status.success() {
@@ -152,26 +158,36 @@ impl ClipboardManager {
     }
 
     fn get_image() -> Option<Vec<u8>> {
-        let output = Command::new("wl-paste")
-            .args(["--type", "image/png"])
-            .output()
-            .ok()?;
+        let types = get_available_types();
 
-        if output.status.success() && !output.stdout.is_empty() {
-            return Some(output.stdout);
-        }
+        for format in SUPPORTED_IMAGE_FORMATS {
+            if types.contains(&format.mime.to_string()) {
+                let output = Command::new("wl-paste")
+                    .args(["--type", format.mime])
+                    .output()
+                    .ok()?;
 
-        let output = Command::new("wl-paste")
-            .args(["--type", "image/jpeg"])
-            .output()
-            .ok()?;
-
-        if output.status.success() && !output.stdout.is_empty() {
-            return Some(output.stdout);
+                if output.status.success() && !output.stdout.is_empty() {
+                    return Some(output.stdout);
+                }
+            }
         }
 
         None
     }
+}
+
+pub fn get_available_types() -> Vec<String> {
+    if let Ok(output) = Command::new("wl-paste").arg("--list-types").output()
+        && output.status.success()
+    {
+        return String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+    }
+    Vec::new()
 }
 
 fn get_image_from_uri_list() -> Option<Vec<u8>> {
@@ -184,12 +200,8 @@ fn get_image_from_uri_list() -> Option<Vec<u8>> {
 }
 
 pub fn get_raw_uri_list_output() -> Option<String> {
-    if let Ok(output) = Command::new("wl-paste").arg("--list-types").output() {
-        let types = String::from_utf8_lossy(&output.stdout);
-        if !types.contains("text/uri-list") {
-            return None;
-        }
-    } else {
+    let types = get_available_types();
+    if !types.contains(&"text/uri-list".to_string()) {
         return None;
     }
 
@@ -230,13 +242,12 @@ pub fn filter_image_paths(paths: &[String]) -> Vec<String> {
             // Check magic numbers to verify it is an image
             if let Ok(mut file) = fs::File::open(path) {
                 use std::io::Read;
-                let mut magic = [0u8; 8];
-                if file.read_exact(&mut magic).is_ok()
-                    && (magic.starts_with(&[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) || // PNG
-                       magic.starts_with(&[0xFF, 0xD8, 0xFF]))
-                // JPEG
-                {
-                    valid_paths.push(decoded_path.clone());
+                let mut magic = [0u8; 12];
+                if file.read_exact(&mut magic).is_ok() {
+                    let mime = detect_mime(&magic);
+                    if mime.starts_with("image/") {
+                        valid_paths.push(decoded_path.clone());
+                    }
                 }
             }
         }

@@ -188,12 +188,13 @@ impl Renderer {
                         };
                         let info = if item.is_sensitive {
                             " [SENSITIVE IMAGE] ".to_string()
-                        } else if let Some((w, h)) =
-                            ImageProcessor::get_image_info(data, "image/png")
-                        {
-                            format!("png {}x{}", w, h)
                         } else {
-                            "image [Binary]".to_string()
+                            let mime = term_uikit::image_format::detect_mime(data);
+                            if let Some((w, h)) = ImageProcessor::get_image_info(data, mime) {
+                                format!("{} {}x{}", mime.trim_start_matches("image/"), w, h)
+                            } else {
+                                "image [Binary]".to_string()
+                            }
                         };
                         li = ListItem::new(info).with_icon(icon);
                     }

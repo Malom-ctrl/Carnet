@@ -1,4 +1,5 @@
 pub mod event;
+pub mod image_format;
 pub mod image_proc;
 pub mod layout;
 pub mod style;
