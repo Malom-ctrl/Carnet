@@ -123,6 +123,7 @@ pub struct Card<'a> {
     pub title: Option<String>,
     pub active: bool,
     pub loading_progress: Option<f32>,
+    pub loading_segment_size: f32,
     pub primary_color: String,
     pub dim_color: String,
     pub text_color: String,
@@ -138,6 +139,7 @@ impl<'a> Card<'a> {
             title: None,
             active: false,
             loading_progress: None,
+            loading_segment_size: 0.05,
             primary_color: "1;34".into(),
             dim_color: "2".into(),
             text_color: "1;37".into(),
@@ -187,6 +189,11 @@ impl<'a> Card<'a> {
         self.loading_progress = progress;
         self
     }
+
+    pub fn with_loading_segment_size(mut self, size: f32) -> Self {
+        self.loading_segment_size = size;
+        self
+    }
     fn render_border_segment(
         &self,
         terminal: &mut Terminal,
@@ -198,10 +205,8 @@ impl<'a> Card<'a> {
     ) -> io::Result<()> {
         let is_highlighted = if let Some(progress) = self.loading_progress {
             let segment_progress = segment_id as f32 / total_segments as f32;
-            // Highlight a segment of 5% of the border
-            let window_size = 0.05;
             let diff = (progress - segment_progress).abs();
-            diff < window_size
+            diff < self.loading_segment_size
         } else {
             false
         };
@@ -291,45 +296,47 @@ impl<'a> View for Card<'a> {
         // 1. Top edge (right of title)
         if top_right_start < area.width - 1 {
             for x in top_right_start..area.width - 1 {
-                border_coords.push((area.y, area.x + x, *c_h));
+                border_coords.push((area.y, area.x + x, *c_h, 1));
             }
         }
 
         // 2. Top right corner
-        border_coords.push((area.y, area.x + area.width - 1, *c_tr));
+        border_coords.push((area.y, area.x + area.width - 1, *c_tr, 1));
 
-        // 3. Right edge
+        // 3. Right edge (vertical weight 2)
         for y in 1..area.height - 1 {
-            border_coords.push((area.y + y, area.x + area.width - 1, *c_v));
+            border_coords.push((area.y + y, area.x + area.width - 1, *c_v, 2));
         }
 
         // 4. Bottom right corner
-        border_coords.push((area.y + area.height - 1, area.x + area.width - 1, *c_br));
+        border_coords.push((area.y + area.height - 1, area.x + area.width - 1, *c_br, 1));
 
         // 5. Bottom edge
         for x in (1..area.width - 1).rev() {
-            border_coords.push((area.y + area.height - 1, area.x + x, *c_h));
+            border_coords.push((area.y + area.height - 1, area.x + x, *c_h, 1));
         }
 
         // 6. Bottom left corner
-        border_coords.push((area.y + area.height - 1, area.x, *c_bl));
+        border_coords.push((area.y + area.height - 1, area.x, *c_bl, 1));
 
-        // 7. Left edge
+        // 7. Left edge (vertical weight 2)
         for y in (1..area.height - 1).rev() {
-            border_coords.push((area.y + y, area.x, *c_v));
+            border_coords.push((area.y + y, area.x, *c_v, 2));
         }
 
         // 8. Top left corner
-        border_coords.push((area.y, area.x, *c_tl));
+        border_coords.push((area.y, area.x, *c_tl, 1));
 
         // 9. Top edge (left of title)
         for x in 1..2 {
-            border_coords.push((area.y, area.x + x, *c_h));
+            border_coords.push((area.y, area.x + x, *c_h, 1));
         }
 
-        let total_segments = border_coords.len();
-        for (i, (ry, rx, char)) in border_coords.into_iter().enumerate() {
-            self.render_border_segment(terminal, ry, rx, char, i, total_segments)?;
+        let total_weight: usize = border_coords.iter().map(|(_, _, _, w)| *w as usize).sum();
+        let mut current_weight = 0;
+        for (ry, rx, char, weight) in border_coords {
+            self.render_border_segment(terminal, ry, rx, char, current_weight, total_weight)?;
+            current_weight += weight as usize;
         }
 
         if title_rendered {

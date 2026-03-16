@@ -105,7 +105,7 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
         }
 
         if let Some(progress) = preview_animation_progress {
-            preview_animation_progress = Some(progress + 0.02);
+            preview_animation_progress = Some(progress + 0.04);
             should_render = true;
         }
 
@@ -218,7 +218,7 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
 
         // Wait for input
         let timeout = if preview_animation_progress.is_some() {
-            Duration::from_millis(30)
+            Duration::from_millis(10)
         } else {
             Duration::from_millis(config.refresh_rate_ms)
         };
