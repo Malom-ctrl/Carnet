@@ -204,7 +204,9 @@ impl Renderer {
                 } else {
                     li = li.dimmed(true);
                 }
-                if let Some(aid) = active_id && item.id == aid {
+                if let Some(aid) = active_id
+                    && item.id == aid
+                {
                     li = li.active(true);
                 }
                 list_items.push(li);

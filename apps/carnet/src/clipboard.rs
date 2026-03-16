@@ -25,7 +25,9 @@ impl ClipboardManager {
             return (Some(ClipboardContent::Image(image_data)), false);
         }
 
-        if config.auto_convert_image_uri && let Some(image_data) = get_image_from_uri_list() {
+        if config.auto_convert_image_uri
+            && let Some(image_data) = get_image_from_uri_list()
+        {
             return (Some(ClipboardContent::Image(image_data)), true);
         }
 
@@ -232,7 +234,7 @@ pub fn filter_image_paths(paths: &[String]) -> Vec<String> {
                 if file.read_exact(&mut magic).is_ok()
                     && (magic.starts_with(&[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) || // PNG
                        magic.starts_with(&[0xFF, 0xD8, 0xFF]))
-                    // JPEG
+                // JPEG
                 {
                     valid_paths.push(decoded_path.clone());
                 }
@@ -263,7 +265,9 @@ pub fn decode_uri_path(path: &str) -> String {
             if let Some(h2) = chars.next() {
                 hex.push(h2);
             }
-            if hex.len() == 2 && let Ok(byte) = u8::from_str_radix(&hex, 16) {
+            if hex.len() == 2
+                && let Ok(byte) = u8::from_str_radix(&hex, 16)
+            {
                 // Reject null and newline characters to prevent path injection
                 if byte == 0 || byte == b'\n' || byte == b'\r' {
                     return String::new();

@@ -154,7 +154,6 @@ impl<'a> Default for Card<'a> {
 }
 
 impl<'a> Card<'a> {
-
     pub fn with_title(mut self, title: impl Into<String>) -> Self {
         self.title = Some(title.into());
         self
@@ -541,7 +540,9 @@ impl<'a, 's> View for List<'a, 's> {
             }
 
             let mut cur_len = 0;
-            if item.active && let Some(icon) = self.active_icon {
+            if item.active
+                && let Some(icon) = self.active_icon
+            {
                 if !is_selected {
                     terminal.set_color(&self.primary_color)?;
                 }
@@ -630,7 +631,6 @@ impl<'a> Default for Input<'a> {
 }
 
 impl<'a> Input<'a> {
-
     pub fn with_value(mut self, value: &'a str) -> Self {
         self.value = value;
         self

@@ -34,7 +34,9 @@ fn main() {
             // Capture output
             let output = bwrap.output().ok();
 
-            if let Some(output) = output && output.status.success() {
+            if let Some(output) = output
+                && output.status.success()
+            {
                 let content = String::from_utf8_lossy(&output.stdout);
                 let paths = clipboard::parse_uri_list(&content);
                 // Filter paths on host (checks file existence and magic numbers)
