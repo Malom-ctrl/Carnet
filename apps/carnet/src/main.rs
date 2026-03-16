@@ -212,7 +212,18 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
 
                             let mut h_write = history.lock().unwrap();
                             h_write.delete(id);
-                            selected_id = None;
+
+                            if filtered_ids_and_content.len() > 1 {
+                                if current_index < filtered_ids_and_content.len() - 1 {
+                                    selected_id =
+                                        Some(filtered_ids_and_content[current_index + 1].0);
+                                } else {
+                                    selected_id =
+                                        Some(filtered_ids_and_content[current_index - 1].0);
+                                }
+                            } else {
+                                selected_id = None;
+                            }
                         }
                     }
                     Key::Enter => {
