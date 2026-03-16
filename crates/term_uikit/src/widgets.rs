@@ -779,6 +779,165 @@ impl<'a> View for Input<'a> {
     }
 }
 
+#[derive(Default, Clone)]
+pub struct ParagraphState {
+    pub scroll: usize,
+    pub total_lines: usize,
+}
+
+impl ParagraphState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn scroll_to(&mut self, offset: usize) {
+        self.scroll = offset;
+    }
+
+    pub fn scroll_up(&mut self, amount: usize) {
+        self.scroll = self.scroll.saturating_sub(amount);
+    }
+
+    pub fn scroll_down(&mut self, amount: usize, visible_height: usize) {
+        // Prevent scrolling past the end
+        if self.scroll + visible_height < self.total_lines {
+            self.scroll += amount;
+        } else {
+            let max_scroll = self.total_lines.saturating_sub(visible_height);
+            if self.scroll < max_scroll {
+                self.scroll = (self.scroll + amount).min(max_scroll);
+            }
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.scroll = 0;
+        self.total_lines = 0;
+    }
+}
+
+pub struct Paragraph<'a> {
+    pub text: Cow<'a, str>,
+    pub state: Option<&'a mut ParagraphState>,
+    pub show_newlines: bool,
+    pub newline_bg_color: String,
+}
+
+impl<'a> Paragraph<'a> {
+    pub fn new(text: impl Into<Cow<'a, str>>) -> Self {
+        Self {
+            text: text.into(),
+            state: None,
+            show_newlines: false,
+            newline_bg_color: "48;5;236".to_string(),
+        }
+    }
+
+    pub fn with_state(mut self, state: &'a mut ParagraphState) -> Self {
+        self.state = Some(state);
+        self
+    }
+
+    pub fn show_newlines(mut self, show: bool) -> Self {
+        self.show_newlines = show;
+        self
+    }
+
+    fn calculate_lines(&self, width: usize) -> usize {
+        if width == 0 || self.text.is_empty() {
+            return 0;
+        }
+        let mut line_count = 0;
+        for line in self.text.lines() {
+            let safe_line: String = line.chars().filter(|c| !c.is_control()).collect();
+            if safe_line.is_empty() {
+                line_count += 1;
+            } else {
+                let len = safe_line.chars().count();
+                line_count += (len + width - 1) / width;
+            }
+        }
+        line_count
+    }
+}
+
+impl<'a> View for Paragraph<'a> {
+    fn measure(&self, width: Option<u16>, _height: Option<u16>) -> (u16, u16) {
+        let width = width.unwrap_or(80) as usize;
+        let lines = self.calculate_lines(width);
+        (width as u16, lines as u16)
+    }
+
+    fn render(&mut self, area: Rect, terminal: &mut Terminal) -> io::Result<()> {
+        if area.width == 0 || area.height == 0 {
+            return Ok(());
+        }
+
+        let width = area.width as usize;
+        let total_lines = self.calculate_lines(width);
+
+        // Update state if provided
+        let scroll_offset = if let Some(state) = &mut self.state {
+            state.total_lines = total_lines;
+            state.scroll
+        } else {
+            0
+        };
+
+        let mut visual_line_idx = 0;
+        let mut current_y = 0;
+
+        let mut print_segment =
+            |text: &str, is_hard_end: bool, v_idx: &mut usize, c_y: &mut u16| -> io::Result<()> {
+                if *v_idx >= scroll_offset {
+                    if *c_y < area.height {
+                        terminal.move_to(area.y + *c_y, area.x)?;
+                        terminal.print(text)?;
+
+                        if is_hard_end && self.show_newlines {
+                            if (text.len() as u16) < area.width {
+                                terminal.set_color(&self.newline_bg_color)?;
+                                terminal.print(" ")?;
+                                terminal.reset_color()?;
+                            }
+                        }
+                        *c_y += 1;
+                    }
+                }
+                *v_idx += 1;
+                Ok(())
+            };
+
+        if self.text.is_empty() {
+            return Ok(());
+        }
+
+        for line in self.text.lines() {
+            let safe_line: String = line.chars().filter(|c| !c.is_control()).collect();
+
+            if safe_line.is_empty() {
+                print_segment("", true, &mut visual_line_idx, &mut current_y)?;
+            } else {
+                let chars: Vec<char> = safe_line.chars().collect();
+                let mut start = 0;
+                while start < chars.len() {
+                    let end = (start + width).min(chars.len());
+                    let chunk: String = chars[start..end].iter().collect();
+                    let is_last_chunk = end == chars.len();
+
+                    print_segment(&chunk, is_last_chunk, &mut visual_line_idx, &mut current_y)?;
+                    start += width;
+                }
+            }
+
+            if visual_line_idx > scroll_offset + area.height as usize {
+                break;
+            }
+        }
+        Ok(())
+    }
+}
+
 pub struct TextView {
     pub text: String,
 }

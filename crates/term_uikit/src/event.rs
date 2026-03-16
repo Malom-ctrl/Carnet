@@ -8,6 +8,10 @@ pub enum Key {
     Backspace,
     Up,
     Down,
+    Left,
+    Right,
+    PageUp,
+    PageDown,
     Unknown,
 }
 
@@ -15,7 +19,7 @@ pub struct InputHandler;
 
 impl InputHandler {
     pub fn read_key() -> Key {
-        let mut buffer = [0u8; 3];
+        let mut buffer = [0u8; 4];
         let stdin = io::stdin();
         let mut handle = stdin.lock();
 
@@ -29,10 +33,14 @@ impl InputHandler {
                     if size == 1 {
                         return Key::Escape;
                     }
-                    if size == 3 && buffer[1] == b'[' {
+                    if size >= 3 && buffer[1] == b'[' {
                         match buffer[2] {
                             b'A' => return Key::Up,
                             b'B' => return Key::Down,
+                            b'C' => return Key::Right,
+                            b'D' => return Key::Left,
+                            b'5' if size >= 4 && buffer[3] == b'~' => return Key::PageUp,
+                            b'6' if size >= 4 && buffer[3] == b'~' => return Key::PageDown,
                             _ => return Key::Unknown,
                         }
                     }

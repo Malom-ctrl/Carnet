@@ -27,6 +27,7 @@ pub struct Config {
     pub ui_icon_pin: String,
     pub ui_icon_sensitive: String,
     pub ui_border_chars: String, // 6 chars: top-left, top-right, bottom-left, bottom-right, horizontal, vertical
+    pub ui_show_newlines: bool,
 
     // Performance
     pub refresh_rate_ms: u64,
@@ -52,6 +53,7 @@ impl Default for Config {
             ui_icon_pin: "📌".to_string(),
             ui_icon_sensitive: "🔒".to_string(),
             ui_border_chars: "╭╮╰╯─│".to_string(),
+            ui_show_newlines: true,
             refresh_rate_ms: 200,
             clipboard_sync_delay_ms: 100,
             tools: Vec::new(),
@@ -88,6 +90,9 @@ UI_ICON_SENSITIVE=🔒
 
 # Border characters (6 characters: top-left, top-right, bottom-left, bottom-right, horizontal, vertical)
 UI_BORDER_CHARS=╭╮╰╯─│
+
+# Show newlines (grey background) in preview
+UI_SHOW_NEWLINES=true
 
 # --- Performance Settings ---
 # UI refresh rate in milliseconds
@@ -188,6 +193,9 @@ impl Config {
                             if value.chars().count() >= 6 {
                                 config.ui_border_chars = value.to_string();
                             }
+                        }
+                        "UI_SHOW_NEWLINES" => {
+                            config.ui_show_newlines = value.to_lowercase() == "true";
                         }
                         "REFRESH_RATE_MS" => {
                             if let Ok(v) = value.parse() {

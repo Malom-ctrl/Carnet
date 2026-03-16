@@ -10,7 +10,7 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::Duration;
-use term_uikit::widgets::{Input, ListState};
+use term_uikit::widgets::{Input, ListState, ParagraphState};
 
 fn main() -> std::io::Result<()> {
     if std::env::var("CARNET_SANDBOXED").is_err() {
@@ -98,6 +98,10 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
     let mut should_render = true;
     let mut preview_manager = PreviewManager::new();
     let mut preview_animation_progress: Option<f32> = None;
+    let mut preview_focused = false;
+    let mut preview_state = ParagraphState::new();
+    let mut last_selected_id = selected_id;
+    let mut last_selected_tool_index = selected_tool_index;
 
     loop {
         if preview_manager.poll() {
@@ -122,12 +126,28 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
             should_render = true;
         }
 
+        if selected_id != last_selected_id {
+            preview_state.reset();
+            last_selected_id = selected_id;
+            should_render = true;
+        }
+
+        if selected_tool_index != last_selected_tool_index {
+            preview_state.reset();
+            last_selected_tool_index = selected_tool_index;
+            should_render = true;
+        }
+
         // Render UI ONLY if something changed
         if should_render {
             // Sync ListState before rendering
             let filtered_ids: Vec<u64> = {
                 let h = history.lock().unwrap();
-                let query = if matches!(mode, Mode::Tools) { "" } else { &search_query };
+                let query = if matches!(mode, Mode::Tools) {
+                    ""
+                } else {
+                    &search_query
+                };
                 h.get_filtered(query).iter().map(|i| i.id).collect()
             };
 
@@ -198,6 +218,8 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                 &config,
                 preview_result,
                 preview_animation_progress.map(|p| p % 1.0),
+                preview_focused,
+                &mut preview_state,
             )?;
             should_render = false;
         }
@@ -212,7 +234,11 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
         if let Ok(key) = rx.recv_timeout(timeout) {
             should_render = true;
 
-            let history_query = if matches!(mode, Mode::Tools) { "" } else { &search_query };
+            let history_query = if matches!(mode, Mode::Tools) {
+                ""
+            } else {
+                &search_query
+            };
             let filtered_ids_and_content: Vec<(u64, ClipboardContent)> = {
                 let h = history.lock().unwrap();
                 h.get_filtered(history_query)
@@ -247,6 +273,12 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
             match mode {
                 Mode::Normal => match key {
                     Key::Char('q') | Key::Escape => break,
+                    Key::Left => {
+                        preview_focused = false;
+                    }
+                    Key::Right => {
+                        preview_focused = true;
+                    }
                     Key::Char('/') => {
                         mode = Mode::Search;
                     }
@@ -256,17 +288,35 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                         selected_tool_index = 0;
                         last_item_id = selected_id;
                         preview_manager.clear();
+                        preview_focused = false;
                     }
                     Key::Up | Key::Char('k') => {
-                        if current_index > 0 {
+                        if preview_focused {
+                            preview_state.scroll_up(1);
+                        } else if current_index > 0 {
                             let new_index = current_index - 1;
                             selected_id = Some(filtered_ids_and_content[new_index].0);
                         }
                     }
                     Key::Down | Key::Char('j') => {
-                        if current_index < filtered_ids_and_content.len().saturating_sub(1) {
+                        if preview_focused {
+                            let visible_height = terminal.size().0.saturating_sub(4) as usize;
+                            preview_state.scroll_down(1, visible_height);
+                        } else if current_index < filtered_ids_and_content.len().saturating_sub(1) {
                             let new_index = current_index + 1;
                             selected_id = Some(filtered_ids_and_content[new_index].0);
+                        }
+                    }
+                    Key::PageUp => {
+                        if preview_focused {
+                            let page_size = terminal.size().0.saturating_sub(4) as usize;
+                            preview_state.scroll_up(page_size);
+                        }
+                    }
+                    Key::PageDown => {
+                        if preview_focused {
+                            let page_size = terminal.size().0.saturating_sub(4) as usize;
+                            preview_state.scroll_down(page_size, page_size);
                         }
                     }
                     Key::Char('p') => {
@@ -350,20 +400,50 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                         search_query.clear();
                         selected_id = last_item_id;
                         preview_manager.clear();
+                        preview_focused = false;
+                        preview_state.reset();
+                    }
+                    Key::Left => {
+                        preview_focused = false;
+                    }
+                    Key::Right => {
+                        preview_focused = true;
+                    }
+                    Key::PageUp => {
+                        if preview_focused {
+                            let page_size = terminal.size().0.saturating_sub(4) as usize;
+                            preview_state.scroll_up(page_size);
+                        }
+                    }
+                    Key::PageDown => {
+                        if preview_focused {
+                            let page_size = terminal.size().0.saturating_sub(4) as usize;
+                            preview_state.scroll_down(page_size, page_size);
+                        }
                     }
                     Key::Up | Key::Char('k') => {
-                        selected_tool_index = selected_tool_index.saturating_sub(1);
+                        if preview_focused {
+                            preview_state.scroll_up(1);
+                        } else {
+                            selected_tool_index = selected_tool_index.saturating_sub(1);
+                        }
                     }
                     Key::Down | Key::Char('j') => {
-                        let selected_item = get_selected_item(&history, last_item_id);
-                        if let Some(item) = selected_item {
-                            let content_type = match item.content {
-                                ClipboardContent::Text(_) => "text",
-                                ClipboardContent::Image(_) => "image",
-                            };
-                            let filtered_tools = get_filtered_tools(&config, content_type, &search_query);
-                            if selected_tool_index < filtered_tools.len().saturating_sub(1) {
-                                selected_tool_index += 1;
+                        if preview_focused {
+                            let visible_height = terminal.size().0.saturating_sub(4) as usize;
+                            preview_state.scroll_down(1, visible_height);
+                        } else {
+                            let selected_item = get_selected_item(&history, last_item_id);
+                            if let Some(item) = selected_item {
+                                let content_type = match item.content {
+                                    ClipboardContent::Text(_) => "text",
+                                    ClipboardContent::Image(_) => "image",
+                                };
+                                let filtered_tools =
+                                    get_filtered_tools(&config, content_type, &search_query);
+                                if selected_tool_index < filtered_tools.len().saturating_sub(1) {
+                                    selected_tool_index += 1;
+                                }
                             }
                         }
                     }
@@ -377,7 +457,8 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                                 ClipboardContent::Image(_) => "image",
                             };
 
-                            let filtered_tools = get_filtered_tools(&config, content_type, &search_query);
+                            let filtered_tools =
+                                get_filtered_tools(&config, content_type, &search_query);
 
                             if !filtered_tools.is_empty() {
                                 let tool_idx = selected_tool_index.min(filtered_tools.len() - 1);

@@ -10,8 +10,8 @@ use term_uikit::Terminal;
 use term_uikit::image_proc::ImageProcessor;
 use term_uikit::layout::Rect;
 use term_uikit::widgets::{
-    ActionBar, Card, EmptyView, Flex, ImageView, Input, List, ListItem, ListState, Sizing,
-    TextView, View,
+    ActionBar, Card, EmptyView, Flex, ImageView, Input, List, ListItem, ListState, Paragraph,
+    ParagraphState, Sizing, TextView, View,
 };
 
 pub struct Renderer;
@@ -30,6 +30,8 @@ impl Renderer {
         config: &Config,
         preview_result: Option<PreviewResult>,
         loading_progress: Option<f32>,
+        preview_focused: bool,
+        preview_state: &mut ParagraphState,
     ) -> io::Result<()> {
         // --- DATA GATHERING ---
         let h_lock = history.lock().unwrap();
@@ -238,7 +240,9 @@ impl Renderer {
         };
         let list_card = Card::new()
             .with_title(list_title)
-            .active(matches!(mode, Mode::Normal) || matches!(mode, Mode::Tools))
+            .active(
+                !preview_focused && (matches!(mode, Mode::Normal) || matches!(mode, Mode::Tools)),
+            )
             .with_colors(&primary_color, &config.ui_color_dim, "1;37")
             .with_border_chars(&config.ui_border_chars)
             .content(history_list);
@@ -248,7 +252,11 @@ impl Renderer {
             match result {
                 PreviewResult::Loading => Box::new(EmptyView),
                 PreviewResult::Success(content) => match content {
-                    ClipboardContent::Text(text) => Box::new(TextView::new(text.clone())),
+                    ClipboardContent::Text(text) => Box::new(
+                        Paragraph::new(text.clone())
+                            .show_newlines(config.ui_show_newlines)
+                            .with_state(preview_state),
+                    ),
                     ClipboardContent::Image(data) => Box::new(ImageView::new(data)),
                 },
                 PreviewResult::Error(err) => Box::new(TextView::new(format!("Error: {}", err))),
@@ -258,7 +266,11 @@ impl Renderer {
                 Box::new(TextView::new(" [ CONTENT MASKED ] "))
             } else {
                 match &selected.content {
-                    ClipboardContent::Text(text) => Box::new(TextView::new(text.clone())),
+                    ClipboardContent::Text(text) => Box::new(
+                        Paragraph::new(text.clone())
+                            .show_newlines(config.ui_show_newlines)
+                            .with_state(preview_state),
+                    ),
                     ClipboardContent::Image(data) => Box::new(ImageView::new(data)),
                 }
             }
@@ -268,7 +280,7 @@ impl Renderer {
 
         let preview_card = Card::new()
             .with_title(" Preview ")
-            .active(false)
+            .active(preview_focused)
             .loading_progress(loading_progress)
             .with_colors(&primary_color, &config.ui_color_dim, "1;37")
             .with_border_chars(&config.ui_border_chars)
