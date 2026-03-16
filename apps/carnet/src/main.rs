@@ -293,25 +293,29 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                     Key::Up | Key::Char('k') => {
                         if preview_focused {
                             preview_state.scroll_up(1);
-                        } else if current_index > 0 {
-                            let new_index = current_index - 1;
-                            selected_id = Some(filtered_ids_and_content[new_index].0);
+                        } else {
+                            history_state.scroll_up();
+                            if let Some((id, _)) = filtered_ids_and_content.get(history_state.selected()) {
+                                selected_id = Some(*id);
+                            }
                         }
                     }
                     Key::Down | Key::Char('j') => {
                         if preview_focused {
                             preview_state.scroll_down(1);
-                        } else if current_index < filtered_ids_and_content.len().saturating_sub(1) {
-                            let new_index = current_index + 1;
-                            selected_id = Some(filtered_ids_and_content[new_index].0);
+                        } else {
+                            history_state.scroll_down();
+                            if let Some((id, _)) = filtered_ids_and_content.get(history_state.selected()) {
+                                selected_id = Some(*id);
+                            }
                         }
                     }
                     Key::PageUp => {
                         if preview_focused {
                             preview_state.scroll_page_up();
                         } else {
-                            let new_index = current_index.saturating_sub(history_state.visible_height);
-                            if let Some((id, _)) = filtered_ids_and_content.get(new_index) {
+                            history_state.scroll_page_up();
+                            if let Some((id, _)) = filtered_ids_and_content.get(history_state.selected()) {
                                 selected_id = Some(*id);
                             }
                         }
@@ -320,9 +324,8 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                         if preview_focused {
                             preview_state.scroll_page_down();
                         } else {
-                            let new_index = (current_index + history_state.visible_height)
-                                .min(filtered_ids_and_content.len().saturating_sub(1));
-                            if let Some((id, _)) = filtered_ids_and_content.get(new_index) {
+                            history_state.scroll_page_down();
+                            if let Some((id, _)) = filtered_ids_and_content.get(history_state.selected()) {
                                 selected_id = Some(*id);
                             }
                         }
@@ -384,27 +387,26 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                         selected_id = h.get_filtered(&search_query).first().map(|i| i.id);
                     }
                     Key::Up | Key::Char('k') => {
-                        if current_index > 0 {
-                            let new_index = current_index - 1;
-                            selected_id = Some(filtered_ids_and_content[new_index].0);
+                        history_state.scroll_up();
+                        if let Some((id, _)) = filtered_ids_and_content.get(history_state.selected()) {
+                            selected_id = Some(*id);
                         }
                     }
                     Key::Down | Key::Char('j') => {
-                        if current_index < filtered_ids_and_content.len().saturating_sub(1) {
-                            let new_index = current_index + 1;
-                            selected_id = Some(filtered_ids_and_content[new_index].0);
+                        history_state.scroll_down();
+                        if let Some((id, _)) = filtered_ids_and_content.get(history_state.selected()) {
+                            selected_id = Some(*id);
                         }
                     }
                     Key::PageUp => {
-                        let new_index = current_index.saturating_sub(history_state.visible_height);
-                        if let Some((id, _)) = filtered_ids_and_content.get(new_index) {
+                        history_state.scroll_page_up();
+                        if let Some((id, _)) = filtered_ids_and_content.get(history_state.selected()) {
                             selected_id = Some(*id);
                         }
                     }
                     Key::PageDown => {
-                        let new_index = (current_index + history_state.visible_height)
-                            .min(filtered_ids_and_content.len().saturating_sub(1));
-                        if let Some((id, _)) = filtered_ids_and_content.get(new_index) {
+                        history_state.scroll_page_down();
+                        if let Some((id, _)) = filtered_ids_and_content.get(history_state.selected()) {
                             selected_id = Some(*id);
                         }
                     }
@@ -434,51 +436,32 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                         if preview_focused {
                             preview_state.scroll_page_up();
                         } else {
-                            selected_tool_index = selected_tool_index.saturating_sub(tool_state.visible_height);
+                            tool_state.scroll_page_up();
+                            selected_tool_index = tool_state.selected();
                         }
                     }
                     Key::PageDown => {
                         if preview_focused {
                             preview_state.scroll_page_down();
                         } else {
-                            let selected_item = get_selected_item(&history, last_item_id);
-                            if let Some(item) = selected_item {
-                                let content_type = match item.content {
-                                    ClipboardContent::Text(_) => "text",
-                                    ClipboardContent::Image(_) => "image",
-                                };
-                                let filtered_tools =
-                                    get_filtered_tools(&config, content_type, &search_query);
-                                if !filtered_tools.is_empty() {
-                                    selected_tool_index = (selected_tool_index + tool_state.visible_height)
-                                        .min(filtered_tools.len().saturating_sub(1));
-                                }
-                            }
+                            tool_state.scroll_page_down();
+                            selected_tool_index = tool_state.selected();
                         }
                     }
                     Key::Up | Key::Char('k') => {
                         if preview_focused {
                             preview_state.scroll_up(1);
                         } else {
-                            selected_tool_index = selected_tool_index.saturating_sub(1);
+                            tool_state.scroll_up();
+                            selected_tool_index = tool_state.selected();
                         }
                     }
                     Key::Down | Key::Char('j') => {
                         if preview_focused {
                             preview_state.scroll_down(1);
                         } else {
-                            let selected_item = get_selected_item(&history, last_item_id);
-                            if let Some(item) = selected_item {
-                                let content_type = match item.content {
-                                    ClipboardContent::Text(_) => "text",
-                                    ClipboardContent::Image(_) => "image",
-                                };
-                                let filtered_tools =
-                                    get_filtered_tools(&config, content_type, &search_query);
-                                if selected_tool_index < filtered_tools.len().saturating_sub(1) {
-                                    selected_tool_index += 1;
-                                }
-                            }
+                            tool_state.scroll_down();
+                            selected_tool_index = tool_state.selected();
                         }
                     }
                     Key::Enter => {

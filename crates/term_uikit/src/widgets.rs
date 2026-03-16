@@ -496,6 +496,7 @@ pub struct ListState {
     pub selected: usize,
     pub offset: usize,
     pub visible_height: usize,
+    pub total_items: usize,
 }
 
 impl ListState {
@@ -504,6 +505,7 @@ impl ListState {
             selected: 0,
             offset: 0,
             visible_height: 0,
+            total_items: 0,
         }
     }
 
@@ -521,8 +523,8 @@ impl ListState {
         }
     }
 
-    pub fn scroll_down(&mut self, total_items: usize) {
-        if total_items > 0 && self.selected < total_items - 1 {
+    pub fn scroll_down(&mut self) {
+        if self.total_items > 0 && self.selected < self.total_items - 1 {
             self.selected += 1;
         }
     }
@@ -531,9 +533,9 @@ impl ListState {
         self.selected = self.selected.saturating_sub(self.visible_height);
     }
 
-    pub fn scroll_page_down(&mut self, total_items: usize) {
-        if total_items > 0 {
-            self.selected = (self.selected + self.visible_height).min(total_items - 1);
+    pub fn scroll_page_down(&mut self) {
+        if self.total_items > 0 {
+            self.selected = (self.selected + self.visible_height).min(self.total_items - 1);
         }
     }
 
@@ -542,9 +544,9 @@ impl ListState {
         self.offset = 0;
     }
 
-    pub fn scroll_to_bottom(&mut self, total_items: usize) {
-        if total_items > 0 {
-            self.selected = total_items - 1;
+    pub fn scroll_to_bottom(&mut self) {
+        if self.total_items > 0 {
+            self.selected = self.total_items - 1;
         }
     }
 
@@ -605,6 +607,7 @@ impl<'a, 's> View for List<'a, 's> {
     fn render(&mut self, area: Rect, terminal: &mut Terminal) -> io::Result<()> {
         let max_display = area.height as usize;
         self.state.visible_height = max_display;
+        self.state.total_items = self.items.len();
         if max_display == 0 {
             return Ok(());
         }
