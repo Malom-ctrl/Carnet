@@ -2,16 +2,16 @@ use crate::clipboard::ClipboardContent;
 use crate::config::Config;
 use crate::history::HistoryManager;
 use crate::ui::Mode;
+use crate::ui::preview::PreviewResult;
 use std::io;
 use std::sync::Mutex;
 use std::time::SystemTime;
 use term_uikit::Terminal;
 use term_uikit::image_proc::ImageProcessor;
 use term_uikit::layout::Rect;
-use crate::ui::preview::PreviewResult;
 use term_uikit::widgets::{
-    ActionBar, Card, EmptyView, Flex, ImageView, Input, List, ListItem, ListState, Sizing,
-    TextView, View, Spinner,
+    ActionBar, Card, EmptyView, Flex, ImageView, Input, List, ListItem, ListState, Sizing, Spinner,
+    TextView, View,
 };
 
 pub struct Renderer;

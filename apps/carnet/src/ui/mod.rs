@@ -1,5 +1,5 @@
-pub mod renderer;
 pub mod preview;
+pub mod renderer;
 
 pub use term_uikit::event::{InputHandler, Key};
 pub use term_uikit::terminal::Terminal;

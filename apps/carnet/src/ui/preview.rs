@@ -1,8 +1,8 @@
 use crate::clipboard::ClipboardContent;
 use crate::config::Tool;
 use std::collections::HashMap;
-use std::process::{Command, Stdio};
 use std::io::Write;
+use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
 
@@ -43,7 +43,7 @@ impl PreviewManager {
 
     pub fn get_preview(&mut self, tool: &Tool, input: &ClipboardContent) -> PreviewResult {
         let key = format!("{}:{}", tool.name, self.calculate_input_hash(input));
-        
+
         if let Some(result) = self.cache.get(&key) {
             return result.clone();
         }
@@ -86,16 +86,20 @@ impl PreviewManager {
                         let result = match output {
                             Ok(out) if out.status.success() => {
                                 let content = if content_type == "text" {
-                                    ClipboardContent::Text(String::from_utf8_lossy(&out.stdout).to_string())
+                                    ClipboardContent::Text(
+                                        String::from_utf8_lossy(&out.stdout).to_string(),
+                                    )
                                 } else {
                                     ClipboardContent::Image(out.stdout)
                                 };
                                 PreviewResult::Success(content)
                             }
-                            Ok(out) => PreviewResult::Error(String::from_utf8_lossy(&out.stderr).to_string()),
+                            Ok(out) => PreviewResult::Error(
+                                String::from_utf8_lossy(&out.stderr).to_string(),
+                            ),
                             Err(e) => PreviewResult::Error(e.to_string()),
                         };
-                        
+
                         let _ = tx.send((key_clone, result));
                     }
                     Err(e) => {

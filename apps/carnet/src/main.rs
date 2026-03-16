@@ -2,8 +2,8 @@ use carnet::clipboard::{ClipboardContent, ClipboardManager};
 use carnet::config::{Config, Tool};
 use carnet::history::HistoryManager;
 use carnet::ui::Terminal;
-use carnet::ui::renderer::Renderer;
 use carnet::ui::preview::{PreviewManager, PreviewResult};
+use carnet::ui::renderer::Renderer;
 use carnet::ui::{InputHandler, Key, Mode, fuzzy_match};
 use std::io::{self, Write};
 use std::process::{Command, Stdio};
@@ -372,7 +372,9 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                                 // Check if we have a cached result
                                 let mut cached_result = None;
                                 if tool.preview {
-                                    if let PreviewResult::Success(content) = preview_manager.get_preview(tool, &item.content) {
+                                    if let PreviewResult::Success(content) =
+                                        preview_manager.get_preview(tool, &item.content)
+                                    {
                                         cached_result = Some(content);
                                     }
                                 }
@@ -407,7 +409,8 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                                         {
                                             let new_content = if content_type == "text" {
                                                 ClipboardContent::Text(
-                                                    String::from_utf8_lossy(&output.stdout).to_string(),
+                                                    String::from_utf8_lossy(&output.stdout)
+                                                        .to_string(),
                                                 )
                                             } else {
                                                 ClipboardContent::Image(output.stdout)
