@@ -1,5 +1,5 @@
 use crate::Terminal;
-use std::ffi::{CString, c_char, c_void};
+use std::ffi::{c_char, c_void};
 use std::io;
 use std::ptr;
 
@@ -126,41 +126,44 @@ fn base64_encode(data: &[u8]) -> String {
 
 impl ImageProcessor {
     pub fn get_image_info(data: &[u8], _mime_type: &str) -> Option<(u32, u32)> {
-        unsafe {
+        let loader = unsafe {
             let bytes = g_bytes_new(data.as_ptr() as *const c_void, data.len());
             let loader = gly_loader_new_for_bytes(bytes);
             g_bytes_unref(bytes);
+            loader
+        };
 
-            if loader.is_null() {
-                return None;
-            }
+        if loader.is_null() {
+            return None;
+        }
 
-            let main_loop = g_main_loop_new(ptr::null_mut(), 0);
-            let mut context = LoadContext {
-                loop_ptr: main_loop,
-                image_ptr: ptr::null_mut(),
-                frame_ptr: ptr::null_mut(),
-            };
+        let main_loop = unsafe { g_main_loop_new(ptr::null_mut(), 0) };
+        let mut context = LoadContext {
+            loop_ptr: main_loop,
+            image_ptr: ptr::null_mut(),
+            frame_ptr: ptr::null_mut(),
+        };
 
-            extern "C" fn on_load_done(
-                loader: *mut c_void,
-                res: *mut GAsyncResult,
-                user_data: *mut c_void,
-            ) {
-                unsafe {
-                    let ctx = &mut *(user_data as *mut LoadContext);
-                    let mut error: *mut GError = ptr::null_mut();
-                    ctx.image_ptr =
-                        gly_loader_load_finish(loader as *mut GlycinLoader, res, &mut error);
+        extern "C" fn on_load_done(
+            loader: *mut c_void,
+            res: *mut GAsyncResult,
+            user_data: *mut c_void,
+        ) {
+            unsafe {
+                let ctx = &mut *(user_data as *mut LoadContext);
+                let mut error: *mut GError = ptr::null_mut();
+                ctx.image_ptr =
+                    gly_loader_load_finish(loader as *mut GlycinLoader, res, &mut error);
 
-                    if !error.is_null() {
-                        g_free(error as *mut c_void);
-                    }
-
-                    g_main_loop_quit(ctx.loop_ptr);
+                if !error.is_null() {
+                    g_free(error as *mut c_void);
                 }
-            }
 
+                g_main_loop_quit(ctx.loop_ptr);
+            }
+        }
+
+        unsafe {
             gly_loader_load_async(
                 loader,
                 ptr::null_mut(),
@@ -169,98 +172,105 @@ impl ImageProcessor {
             );
 
             g_main_loop_run(main_loop);
+        }
 
-            let result = if !context.image_ptr.is_null() {
-                let w = gly_image_get_width(context.image_ptr);
-                let h = gly_image_get_height(context.image_ptr);
-                Some((w, h))
-            } else {
-                None
-            };
+        let result = if !context.image_ptr.is_null() {
+            let w = unsafe { gly_image_get_width(context.image_ptr) };
+            let h = unsafe { gly_image_get_height(context.image_ptr) };
+            Some((w, h))
+        } else {
+            None
+        };
 
-            // Cleanup
+        // Cleanup
+        unsafe {
             if !context.image_ptr.is_null() {
                 g_object_unref(context.image_ptr as *mut c_void);
             }
             g_object_unref(loader as *mut c_void);
             g_main_loop_unref(main_loop);
-
-            result
         }
+
+        result
     }
 
     pub fn decode_image_to_rgba(data: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
-        unsafe {
+        let loader = unsafe {
             let bytes = g_bytes_new(data.as_ptr() as *const c_void, data.len());
             let loader = gly_loader_new_for_bytes(bytes);
             g_bytes_unref(bytes);
+            loader
+        };
 
-            if loader.is_null() {
-                return None;
-            }
+        if loader.is_null() {
+            return None;
+        }
 
-            // Request RGBA (8-bit)
+        // Request RGBA (8-bit)
+        unsafe {
             gly_loader_set_accepted_memory_formats(loader, 1 << 5);
+        }
 
-            let main_loop = g_main_loop_new(ptr::null_mut(), 0);
-            let mut context = LoadContext {
-                loop_ptr: main_loop,
-                image_ptr: ptr::null_mut(),
-                frame_ptr: ptr::null_mut(),
-            };
+        let main_loop = unsafe { g_main_loop_new(ptr::null_mut(), 0) };
+        let mut context = LoadContext {
+            loop_ptr: main_loop,
+            image_ptr: ptr::null_mut(),
+            frame_ptr: ptr::null_mut(),
+        };
 
-            extern "C" fn on_load_done(
-                loader: *mut c_void,
-                res: *mut GAsyncResult,
-                user_data: *mut c_void,
-            ) {
-                unsafe {
-                    let ctx = &mut *(user_data as *mut LoadContext);
-                    let mut error: *mut GError = ptr::null_mut();
-                    ctx.image_ptr =
-                        gly_loader_load_finish(loader as *mut GlycinLoader, res, &mut error);
+        extern "C" fn on_load_done(
+            loader: *mut c_void,
+            res: *mut GAsyncResult,
+            user_data: *mut c_void,
+        ) {
+            unsafe {
+                let ctx = &mut *(user_data as *mut LoadContext);
+                let mut error: *mut GError = ptr::null_mut();
+                ctx.image_ptr =
+                    gly_loader_load_finish(loader as *mut GlycinLoader, res, &mut error);
 
-                    if !error.is_null() {
-                        g_free(error as *mut c_void);
-                    }
+                if !error.is_null() {
+                    g_free(error as *mut c_void);
+                }
 
-                    if !ctx.image_ptr.is_null() {
-                        extern "C" fn on_frame_done(
-                            image: *mut c_void,
-                            res: *mut GAsyncResult,
-                            user_data: *mut c_void,
-                        ) {
-                            unsafe {
-                                let ctx = &mut *(user_data as *mut LoadContext);
-                                let mut error: *mut GError = ptr::null_mut();
-                                ctx.frame_ptr = gly_image_get_specific_frame_finish(
-                                    image as *mut GlycinImage,
-                                    res,
-                                    &mut error,
-                                );
-                                if !error.is_null() {
-                                    g_free(error as *mut c_void);
-                                }
-                                g_main_loop_quit(ctx.loop_ptr);
+                if !ctx.image_ptr.is_null() {
+                    extern "C" fn on_frame_done(
+                        image: *mut c_void,
+                        res: *mut GAsyncResult,
+                        user_data: *mut c_void,
+                    ) {
+                        unsafe {
+                            let ctx = &mut *(user_data as *mut LoadContext);
+                            let mut error: *mut GError = ptr::null_mut();
+                            ctx.frame_ptr = gly_image_get_specific_frame_finish(
+                                image as *mut GlycinImage,
+                                res,
+                                &mut error,
+                            );
+                            if !error.is_null() {
+                                g_free(error as *mut c_void);
                             }
+                            g_main_loop_quit(ctx.loop_ptr);
                         }
-                        let request = gly_frame_request_new();
-                        gly_image_get_specific_frame_async(
-                            ctx.image_ptr,
-                            request,
-                            ptr::null_mut(),
-                            on_frame_done,
-                            user_data,
-                        );
-                        if !request.is_null() {
-                            g_object_unref(request);
-                        }
-                    } else {
-                        g_main_loop_quit(ctx.loop_ptr);
                     }
+                    let request = gly_frame_request_new();
+                    gly_image_get_specific_frame_async(
+                        ctx.image_ptr,
+                        request,
+                        ptr::null_mut(),
+                        on_frame_done,
+                        user_data,
+                    );
+                    if !request.is_null() {
+                        g_object_unref(request);
+                    }
+                } else {
+                    g_main_loop_quit(ctx.loop_ptr);
                 }
             }
+        }
 
+        unsafe {
             gly_loader_load_async(
                 loader,
                 ptr::null_mut(),
@@ -269,8 +279,10 @@ impl ImageProcessor {
             );
 
             g_main_loop_run(main_loop);
+        }
 
-            let result = if !context.frame_ptr.is_null() {
+        let result = if !context.frame_ptr.is_null() {
+            unsafe {
                 let w = gly_image_get_width(context.image_ptr);
                 let h = gly_image_get_height(context.image_ptr);
                 let g_bytes = gly_frame_get_buf_bytes(context.frame_ptr);
@@ -280,11 +292,13 @@ impl ImageProcessor {
                 std::ptr::copy_nonoverlapping(data_ptr as *const u8, rgba.as_mut_ptr(), size);
                 rgba.set_len(size);
                 Some((w, h, rgba))
-            } else {
-                None
-            };
+            }
+        } else {
+            None
+        };
 
-            // Cleanup
+        // Cleanup
+        unsafe {
             if !context.frame_ptr.is_null() {
                 g_object_unref(context.frame_ptr as *mut c_void);
             }
@@ -293,9 +307,9 @@ impl ImageProcessor {
             }
             g_object_unref(loader as *mut c_void);
             g_main_loop_unref(main_loop);
-
-            result
         }
+
+        result
     }
 
     pub fn render_image(
