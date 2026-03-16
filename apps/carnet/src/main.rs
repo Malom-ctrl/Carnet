@@ -127,7 +127,8 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
             // Sync ListState before rendering
             let filtered_ids: Vec<u64> = {
                 let h = history.lock().unwrap();
-                h.get_filtered(&search_query).iter().map(|i| i.id).collect()
+                let query = if matches!(mode, Mode::Tools) { "" } else { &search_query };
+                h.get_filtered(query).iter().map(|i| i.id).collect()
             };
 
             let current_idx = selected_id
@@ -137,15 +138,7 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
             tool_state.select(selected_tool_index);
 
             let preview_result = if matches!(mode, Mode::Tools) {
-                let selected_item = {
-                    let h = history.lock().unwrap();
-                    let filtered = h.get_filtered("");
-                    if let Some(id) = last_item_id {
-                        filtered.iter().find(|i| i.id == id).map(|&i| i.clone())
-                    } else {
-                        filtered.first().map(|&i| i.clone())
-                    }
-                };
+                let selected_item = get_selected_item(&history, last_item_id);
 
                 if let Some(item) = selected_item {
                     let content_type = match item.content {
@@ -153,18 +146,11 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                         ClipboardContent::Image(_) => "image",
                     };
 
-                    let filtered_tools: Vec<&Tool> = config
-                        .tools
-                        .iter()
-                        .filter(|tool| {
-                            let tool_ctx = tool.content_type.to_lowercase();
-                            (tool_ctx == "both" || tool_ctx == content_type)
-                                && fuzzy_match(&search_query, &tool.name)
-                        })
-                        .collect();
+                    let filtered_tools = get_filtered_tools(&config, content_type, &search_query);
 
                     if !filtered_tools.is_empty() {
-                        let tool = filtered_tools[selected_tool_index % filtered_tools.len()];
+                        let tool_idx = selected_tool_index.min(filtered_tools.len() - 1);
+                        let tool = filtered_tools[tool_idx];
                         if tool.preview {
                             let res = preview_manager.get_preview(tool, &item.content);
 
@@ -226,9 +212,10 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
         if let Ok(key) = rx.recv_timeout(timeout) {
             should_render = true;
 
+            let history_query = if matches!(mode, Mode::Tools) { "" } else { &search_query };
             let filtered_ids_and_content: Vec<(u64, ClipboardContent)> = {
                 let h = history.lock().unwrap();
-                h.get_filtered(&search_query)
+                h.get_filtered(history_query)
                     .iter()
                     .map(|&i| (i.id, i.content.clone()))
                     .collect()
@@ -368,19 +355,21 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                         selected_tool_index = selected_tool_index.saturating_sub(1);
                     }
                     Key::Down | Key::Char('j') => {
-                        selected_tool_index += 1;
+                        let selected_item = get_selected_item(&history, last_item_id);
+                        if let Some(item) = selected_item {
+                            let content_type = match item.content {
+                                ClipboardContent::Text(_) => "text",
+                                ClipboardContent::Image(_) => "image",
+                            };
+                            let filtered_tools = get_filtered_tools(&config, content_type, &search_query);
+                            if selected_tool_index < filtered_tools.len().saturating_sub(1) {
+                                selected_tool_index += 1;
+                            }
+                        }
                     }
                     Key::Enter => {
                         // Execute tool
-                        let selected_item = {
-                            let h = history.lock().unwrap();
-                            let filtered = h.get_filtered("");
-                            if let Some(id) = last_item_id {
-                                filtered.iter().find(|i| i.id == id).map(|&i| i.clone())
-                            } else {
-                                filtered.first().map(|&i| i.clone())
-                            }
-                        };
+                        let selected_item = get_selected_item(&history, last_item_id);
 
                         if let Some(item) = selected_item {
                             let content_type = match item.content {
@@ -388,19 +377,11 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                                 ClipboardContent::Image(_) => "image",
                             };
 
-                            let filtered_tools: Vec<&Tool> = config
-                                .tools
-                                .iter()
-                                .filter(|tool| {
-                                    let tool_ctx = tool.content_type.to_lowercase();
-                                    (tool_ctx == "both" || tool_ctx == content_type)
-                                        && fuzzy_match(&search_query, &tool.name)
-                                })
-                                .collect();
+                            let filtered_tools = get_filtered_tools(&config, content_type, &search_query);
 
                             if !filtered_tools.is_empty() {
-                                let tool =
-                                    filtered_tools[selected_tool_index % filtered_tools.len()];
+                                let tool_idx = selected_tool_index.min(filtered_tools.len() - 1);
+                                let tool = filtered_tools[tool_idx];
 
                                 // Check if we have a cached result
                                 let mut cached_result = None;
@@ -470,4 +451,33 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+fn get_selected_item(
+    history: &Arc<Mutex<HistoryManager>>,
+    last_item_id: Option<u64>,
+) -> Option<carnet::history::HistoryItem> {
+    let h = history.lock().unwrap();
+    let filtered = h.get_filtered("");
+    if let Some(id) = last_item_id {
+        filtered.iter().find(|i| i.id == id).map(|&i| i.clone())
+    } else {
+        filtered.first().map(|&i| i.clone())
+    }
+}
+
+fn get_filtered_tools<'a>(
+    config: &'a Config,
+    content_type: &str,
+    search_query: &str,
+) -> Vec<&'a Tool> {
+    config
+        .tools
+        .iter()
+        .filter(|tool| {
+            let tool_ctx = tool.content_type.to_lowercase();
+            (tool_ctx == "both" || tool_ctx == content_type)
+                && fuzzy_match(search_query, &tool.name)
+        })
+        .collect()
 }
