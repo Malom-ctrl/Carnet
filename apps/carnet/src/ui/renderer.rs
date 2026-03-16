@@ -10,7 +10,7 @@ use term_uikit::Terminal;
 use term_uikit::image_proc::ImageProcessor;
 use term_uikit::layout::Rect;
 use term_uikit::widgets::{
-    ActionBar, Card, EmptyView, Flex, ImageView, Input, List, ListItem, ListState, Sizing, Spinner,
+    ActionBar, Card, EmptyView, Flex, ImageView, Input, List, ListItem, ListState, Sizing,
     TextView, View,
 };
 
@@ -29,6 +29,7 @@ impl Renderer {
         tool_state: &mut ListState,
         config: &Config,
         preview_result: Option<PreviewResult>,
+        loading_progress: Option<f32>,
     ) -> io::Result<()> {
         // --- DATA GATHERING ---
         let h_lock = history.lock().unwrap();
@@ -245,7 +246,7 @@ impl Renderer {
         // Preview Content
         let preview_view: Box<dyn View> = if let Some(result) = &preview_result {
             match result {
-                PreviewResult::Loading => Box::new(Spinner::new().with_color(&primary_color)),
+                PreviewResult::Loading => Box::new(EmptyView),
                 PreviewResult::Success(content) => match content {
                     ClipboardContent::Text(text) => Box::new(TextView::new(text.clone())),
                     ClipboardContent::Image(data) => Box::new(ImageView::new(data)),
@@ -268,6 +269,7 @@ impl Renderer {
         let preview_card = Card::new()
             .with_title(" Preview ")
             .active(false)
+            .loading_progress(loading_progress)
             .with_colors(&primary_color, &config.ui_color_dim, "1;37")
             .with_border_chars(&config.ui_border_chars)
             .content(preview_view);

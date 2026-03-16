@@ -122,6 +122,7 @@ impl<'a> View for Flex<'a> {
 pub struct Card<'a> {
     pub title: Option<String>,
     pub active: bool,
+    pub loading_progress: Option<f32>,
     pub primary_color: String,
     pub dim_color: String,
     pub text_color: String,
@@ -136,6 +137,7 @@ impl<'a> Card<'a> {
         Self {
             title: None,
             active: false,
+            loading_progress: None,
             primary_color: "1;34".into(),
             dim_color: "2".into(),
             text_color: "1;37".into(),
@@ -144,12 +146,6 @@ impl<'a> Card<'a> {
             vertical_padding: 0,
             content: None,
         }
-    }
-}
-
-impl<'a> Default for Card<'a> {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -185,6 +181,42 @@ impl<'a> Card<'a> {
     pub fn content<V: View + 'a>(mut self, view: V) -> Self {
         self.content = Some(Box::new(view));
         self
+    }
+
+    pub fn loading_progress(mut self, progress: Option<f32>) -> Self {
+        self.loading_progress = progress;
+        self
+    }
+    fn render_border_segment(
+        &self,
+        terminal: &mut Terminal,
+        y: u16,
+        x: u16,
+        char: char,
+        segment_id: usize,
+        total_segments: usize,
+    ) -> io::Result<()> {
+        let is_highlighted = if let Some(progress) = self.loading_progress {
+            let segment_progress = segment_id as f32 / total_segments as f32;
+            // Highlight a segment of 5% of the border
+            let window_size = 0.05;
+            let diff = (progress - segment_progress).abs();
+            diff < window_size
+        } else {
+            false
+        };
+
+        if is_highlighted {
+            terminal.set_color(&self.primary_color)?;
+        } else if self.active {
+            terminal.set_color(&self.primary_color)?;
+        } else {
+            terminal.set_color(&self.dim_color)?;
+        }
+
+        terminal.move_to(y, x)?;
+        terminal.print(&char.to_string())?;
+        Ok(())
     }
 
     fn inner_area(&self, area: Rect) -> Rect {
@@ -239,46 +271,83 @@ impl<'a> View for Card<'a> {
         let c_h = b_chars.get(4).unwrap_or(&'─');
         let c_v = b_chars.get(5).unwrap_or(&'│');
 
-        if self.active {
-            terminal.set_color(&self.primary_color)?;
+        // Calculate segments for animation
+        // Start from right of title, end at left of title
+        let title_rendered = self
+            .title
+            .as_ref()
+            .map(|t| area.width > (t.len() as u16 + 4))
+            .unwrap_or(false);
+
+        let title_len = if title_rendered {
+            self.title.as_ref().map(|t| t.len() as u16 + 2).unwrap_or(0)
         } else {
-            terminal.set_color(&self.dim_color)?;
+            0
+        };
+        let top_right_start = 2 + title_len;
+
+        let mut border_coords = Vec::new();
+
+        // 1. Top edge (right of title)
+        if top_right_start < area.width - 1 {
+            for x in top_right_start..area.width - 1 {
+                border_coords.push((area.y, area.x + x, *c_h));
+            }
         }
 
-        terminal.move_to(area.y, area.x)?;
-        terminal.print(&c_tl.to_string())?;
-        terminal.move_to(area.y, area.x + area.width - 1)?;
-        terminal.print(&c_tr.to_string())?;
-        terminal.move_to(area.y + area.height - 1, area.x)?;
-        terminal.print(&c_bl.to_string())?;
-        terminal.move_to(area.y + area.height - 1, area.x + area.width - 1)?;
-        terminal.print(&c_br.to_string())?;
+        // 2. Top right corner
+        border_coords.push((area.y, area.x + area.width - 1, *c_tr));
 
-        for i in 1..area.width - 1 {
-            terminal.move_to(area.y, area.x + i)?;
-            terminal.print(&c_h.to_string())?;
-            terminal.move_to(area.y + area.height - 1, area.x + i)?;
-            terminal.print(&c_h.to_string())?;
-        }
-        for i in 1..area.height - 1 {
-            terminal.move_to(area.y + i, area.x)?;
-            terminal.print(&c_v.to_string())?;
-            terminal.move_to(area.y + i, area.x + area.width - 1)?;
-            terminal.print(&c_v.to_string())?;
+        // 3. Right edge
+        for y in 1..area.height - 1 {
+            border_coords.push((area.y + y, area.x + area.width - 1, *c_v));
         }
 
-        if let Some(txt) = &self.title
-            && area.width > (txt.len() as u16 + 4)
-        {
+        // 4. Bottom right corner
+        border_coords.push((area.y + area.height - 1, area.x + area.width - 1, *c_br));
+
+        // 5. Bottom edge
+        for x in (1..area.width - 1).rev() {
+            border_coords.push((area.y + area.height - 1, area.x + x, *c_h));
+        }
+
+        // 6. Bottom left corner
+        border_coords.push((area.y + area.height - 1, area.x, *c_bl));
+
+        // 7. Left edge
+        for y in (1..area.height - 1).rev() {
+            border_coords.push((area.y + y, area.x, *c_v));
+        }
+
+        // 8. Top left corner
+        border_coords.push((area.y, area.x, *c_tl));
+
+        // 9. Top edge (left of title)
+        for x in 1..2 {
+            border_coords.push((area.y, area.x + x, *c_h));
+        }
+
+        let total_segments = border_coords.len();
+        for (i, (ry, rx, char)) in border_coords.into_iter().enumerate() {
+            self.render_border_segment(terminal, ry, rx, char, i, total_segments)?;
+        }
+
+        if title_rendered {
+            let txt = self.title.as_ref().unwrap();
             terminal.move_to(area.y, area.x + 2)?;
+            terminal.set_color(if self.active || self.loading_progress.is_some() {
+                &self.primary_color
+            } else {
+                &self.dim_color
+            })?;
             terminal.print(" ")?;
             terminal.set_color(&self.text_color)?;
             terminal.print(txt)?;
-            if self.active {
-                terminal.set_color(&self.primary_color)?;
+            terminal.set_color(if self.active || self.loading_progress.is_some() {
+                &self.primary_color
             } else {
-                terminal.set_color(&self.dim_color)?;
-            }
+                &self.dim_color
+            })?;
             terminal.print(" ")?;
         }
         terminal.reset_color()?;
@@ -769,53 +838,6 @@ impl View for EmptyView {
         (0, 0)
     }
     fn render(&mut self, _area: Rect, _terminal: &mut Terminal) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-pub struct Spinner {
-    pub color: String,
-}
-
-impl Spinner {
-    pub fn new() -> Self {
-        Self {
-            color: "1;37".into(),
-        }
-    }
-
-    pub fn with_color(mut self, color: &str) -> Self {
-        self.color = color.into();
-        self
-    }
-}
-
-impl Default for Spinner {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl View for Spinner {
-    fn measure(&self, _width: Option<u16>, _height: Option<u16>) -> (u16, u16) {
-        (1, 1)
-    }
-
-    fn render(&mut self, area: Rect, terminal: &mut Terminal) -> io::Result<()> {
-        let frames = vec!["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis();
-        let frame = frames[(now / 100 % frames.len() as u128) as usize];
-
-        let cx = area.x + area.width / 2;
-        let cy = area.y + area.height / 2;
-
-        terminal.move_to(cy, cx)?;
-        terminal.set_color(&self.color)?;
-        terminal.print(frame)?;
-        terminal.reset_color()?;
         Ok(())
     }
 }

@@ -97,9 +97,15 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
     let mut last_size = terminal.size();
     let mut should_render = true;
     let mut preview_manager = PreviewManager::new();
+    let mut preview_animation_progress: Option<f32> = None;
 
     loop {
         if preview_manager.poll() {
+            should_render = true;
+        }
+
+        if let Some(progress) = preview_animation_progress {
+            preview_animation_progress = Some(progress + 0.02);
             should_render = true;
         }
 
@@ -160,17 +166,37 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                     if !filtered_tools.is_empty() {
                         let tool = filtered_tools[selected_tool_index % filtered_tools.len()];
                         if tool.preview {
-                            Some(preview_manager.get_preview(tool, &item.content))
+                            let res = preview_manager.get_preview(tool, &item.content);
+
+                            // Start animation if loading
+                            if matches!(res, PreviewResult::Loading)
+                                && preview_animation_progress.is_none()
+                            {
+                                preview_animation_progress = Some(0.0);
+                            }
+
+                            // Stop animation only if we reached the endof a tturn AND result is not loading
+                            if let Some(progress) = preview_animation_progress {
+                                if progress >= 1.0 && !matches!(res, PreviewResult::Loading) {
+                                    preview_animation_progress = None;
+                                }
+                            }
+
+                            Some(res)
                         } else {
+                            preview_animation_progress = None;
                             None
                         }
                     } else {
+                        preview_animation_progress = None;
                         None
                     }
                 } else {
+                    preview_animation_progress = None;
                     None
                 }
             } else {
+                preview_animation_progress = None;
                 None
             };
 
@@ -185,12 +211,19 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                 &mut tool_state,
                 &config,
                 preview_result,
+                preview_animation_progress.map(|p| p % 1.0),
             )?;
             should_render = false;
         }
 
         // Wait for input
-        if let Ok(key) = rx.recv_timeout(Duration::from_millis(config.refresh_rate_ms)) {
+        let timeout = if preview_animation_progress.is_some() {
+            Duration::from_millis(30)
+        } else {
+            Duration::from_millis(config.refresh_rate_ms)
+        };
+
+        if let Ok(key) = rx.recv_timeout(timeout) {
             should_render = true;
 
             let filtered_ids_and_content: Vec<(u64, ClipboardContent)> = {
