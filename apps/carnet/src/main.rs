@@ -300,8 +300,7 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                     }
                     Key::Down | Key::Char('j') => {
                         if preview_focused {
-                            let visible_height = terminal.size().0.saturating_sub(4) as usize;
-                            preview_state.scroll_down(1, visible_height);
+                            preview_state.scroll_down(1, None);
                         } else if current_index < filtered_ids_and_content.len().saturating_sub(1) {
                             let new_index = current_index + 1;
                             selected_id = Some(filtered_ids_and_content[new_index].0);
@@ -316,7 +315,7 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                     Key::PageDown => {
                         if preview_focused {
                             let page_size = terminal.size().0.saturating_sub(4) as usize;
-                            preview_state.scroll_down(page_size, page_size);
+                            preview_state.scroll_down(page_size, Some(page_size));
                         }
                     }
                     Key::Char('p') => {
@@ -418,7 +417,7 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                     Key::PageDown => {
                         if preview_focused {
                             let page_size = terminal.size().0.saturating_sub(4) as usize;
-                            preview_state.scroll_down(page_size, page_size);
+                            preview_state.scroll_down(page_size, Some(page_size));
                         }
                     }
                     Key::Up | Key::Char('k') => {
@@ -430,8 +429,7 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
                     }
                     Key::Down | Key::Char('j') => {
                         if preview_focused {
-                            let visible_height = terminal.size().0.saturating_sub(4) as usize;
-                            preview_state.scroll_down(1, visible_height);
+                            preview_state.scroll_down(1, None);
                         } else {
                             let selected_item = get_selected_item(&history, last_item_id);
                             if let Some(item) = selected_item {

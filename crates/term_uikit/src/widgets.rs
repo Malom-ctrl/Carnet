@@ -783,6 +783,7 @@ impl<'a> View for Input<'a> {
 pub struct ParagraphState {
     pub scroll: usize,
     pub total_lines: usize,
+    pub visible_height: usize,
 }
 
 impl ParagraphState {
@@ -798,21 +799,22 @@ impl ParagraphState {
         self.scroll = self.scroll.saturating_sub(amount);
     }
 
-    pub fn scroll_down(&mut self, amount: usize, visible_height: usize) {
-        // Prevent scrolling past the end
-        if self.scroll + visible_height < self.total_lines {
-            self.scroll += amount;
-        } else {
-            let max_scroll = self.total_lines.saturating_sub(visible_height);
-            if self.scroll < max_scroll {
-                self.scroll = (self.scroll + amount).min(max_scroll);
-            }
+    pub fn scroll_down(&mut self, amount: usize, visible_height: Option<usize>) {
+        let v_height = visible_height.unwrap_or(self.visible_height);
+        if v_height == 0 {
+            return;
+        }
+
+        let max_scroll = self.total_lines.saturating_sub(v_height);
+        if self.scroll < max_scroll {
+            self.scroll = (self.scroll + amount).min(max_scroll);
         }
     }
 
     pub fn reset(&mut self) {
         self.scroll = 0;
         self.total_lines = 0;
+        self.visible_height = 0;
     }
 }
 
@@ -848,7 +850,8 @@ impl<'a> Paragraph<'a> {
             return 0;
         }
         let mut line_count = 0;
-        for line in self.text.lines() {
+        // split('\n') ensures we count trailing newlines correctly
+        for line in self.text.split('\n') {
             let safe_line: String = line.chars().filter(|c| !c.is_control()).collect();
             if safe_line.is_empty() {
                 line_count += 1;
@@ -879,6 +882,7 @@ impl<'a> View for Paragraph<'a> {
         // Update state if provided
         let scroll_offset = if let Some(state) = &mut self.state {
             state.total_lines = total_lines;
+            state.visible_height = area.height as usize;
             state.scroll
         } else {
             0
@@ -912,7 +916,7 @@ impl<'a> View for Paragraph<'a> {
             return Ok(());
         }
 
-        for line in self.text.lines() {
+        for line in self.text.split('\n') {
             let safe_line: String = line.chars().filter(|c| !c.is_control()).collect();
 
             if safe_line.is_empty() {
