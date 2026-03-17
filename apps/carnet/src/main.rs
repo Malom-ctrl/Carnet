@@ -12,12 +12,18 @@ use std::thread;
 use term_uikit::widgets::{Input, ListState, ParagraphState};
 
 fn main() -> std::io::Result<()> {
+    let args: Vec<String> = std::env::args().collect();
+    
+    if args.len() > 1 && args[1] == "--version" {
+        println!("carnet {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
     if std::env::var("CARNET_SANDBOXED").is_err() {
         eprintln!("Error: carnet must be run through carnet-sandbox");
         std::process::exit(1);
     }
     let config = Config::load();
-    let args: Vec<String> = std::env::args().collect();
     let command = args.get(1).map(|s| s.as_str()).unwrap_or("show");
 
     match command {
