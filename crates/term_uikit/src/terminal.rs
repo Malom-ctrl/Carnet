@@ -1,7 +1,7 @@
+use std::collections::HashMap;
 use std::io::{self, BufWriter, Write};
 use std::mem;
 use std::os::unix::io::AsRawFd;
-use std::collections::HashMap;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Cell {
@@ -111,7 +111,14 @@ impl Terminal {
     }
 
     fn exit_raw_mode(&mut self) -> io::Result<()> {
-        if unsafe { libc::tcsetattr(io::stdout().as_raw_fd(), libc::TCSAFLUSH, &self.original_termios) } != 0 {
+        if unsafe {
+            libc::tcsetattr(
+                io::stdout().as_raw_fd(),
+                libc::TCSAFLUSH,
+                &self.original_termios,
+            )
+        } != 0
+        {
             return Err(io::Error::last_os_error());
         }
         Ok(())
@@ -160,20 +167,16 @@ impl Terminal {
 
                 if next_cell != current_cell {
                     // Check if only image changed or both
-                    let symbol_changed = next_cell.symbol != current_cell.symbol 
-                        || next_cell.fg != current_cell.fg 
+                    let symbol_changed = next_cell.symbol != current_cell.symbol
+                        || next_cell.fg != current_cell.fg
                         || next_cell.bg != current_cell.bg;
-                    
+
                     let image_changed = next_cell.image_hash != current_cell.image_hash;
 
-                    if image_changed {
-                        if let Some(data) = &next_cell.image_data {
-                            // Print image directly. move_to_raw is used inside print_image logic usually,
-                            // but here we are already at the right spot if we move cursor.
-                            write!(self.stdout, "\x1b[{};{}H", y + 1, x + 1)?;
-                            write!(self.stdout, "{}", data)?;
-                            last_x = u16::MAX; // Invalidate cursor
-                        }
+                    if image_changed && let Some(data) = &next_cell.image_data {
+                        write!(self.stdout, "\x1b[{};{}H", y + 1, x + 1)?;
+                        write!(self.stdout, "{}", data)?;
+                        last_x = u16::MAX; // Invalidate cursor
                     }
 
                     if symbol_changed {
@@ -205,7 +208,9 @@ impl Terminal {
         write!(self.stdout, "\x1b[0m")?;
         self.stdout.flush()?;
 
-        self.current_buffer.cells.clone_from_slice(&self.next_buffer.cells);
+        self.current_buffer
+            .cells
+            .clone_from_slice(&self.next_buffer.cells);
         self.next_buffer.reset();
         Ok(())
     }
@@ -282,10 +287,17 @@ impl Terminal {
     }
 
     pub fn size(&self) -> (u16, u16) {
-        let mut winsize = libc::winsize { ws_row: 0, ws_col: 0, ws_xpixel: 0, ws_ypixel: 0 };
+        let mut winsize = libc::winsize {
+            ws_row: 0,
+            ws_col: 0,
+            ws_xpixel: 0,
+            ws_ypixel: 0,
+        };
         unsafe {
             if libc::ioctl(io::stdout().as_raw_fd(), libc::TIOCGWINSZ, &mut winsize) == 0
-                && winsize.ws_row > 0 && winsize.ws_col > 0 {
+                && winsize.ws_row > 0
+                && winsize.ws_col > 0
+            {
                 return (winsize.ws_row, winsize.ws_col);
             }
         }

@@ -20,6 +20,12 @@ pub struct PreviewManager {
     rx: mpsc::Receiver<(String, PreviewResult)>,
 }
 
+impl Default for PreviewManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PreviewManager {
     pub fn new() -> Self {
         let (tx, rx) = mpsc::channel();

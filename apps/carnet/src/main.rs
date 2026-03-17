@@ -13,7 +13,7 @@ use term_uikit::widgets::{Input, ListState, ParagraphState};
 
 fn main() -> std::io::Result<()> {
     let args: Vec<String> = std::env::args().collect();
-    
+
     if args.len() > 1 && args[1] == "--version" {
         println!("carnet {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
@@ -155,11 +155,7 @@ impl App {
             let item = if let Some(id) = self.selected_id {
                 history_lock.items().get(&id).cloned()
             } else {
-                history_lock
-                    .get_filtered("")
-                    .first()
-                    .cloned()
-                    .map(|i| i.clone())
+                history_lock.get_filtered("").first().cloned().cloned()
             };
             let items = item.map(|i| vec![i]).unwrap_or_default();
             (items, 0)
@@ -214,11 +210,7 @@ impl App {
         if let Some(id) = self.selected_id {
             history_lock.items().get(&id).cloned()
         } else {
-            history_lock
-                .get_filtered("")
-                .first()
-                .cloned()
-                .map(|i| i.clone())
+            history_lock.get_filtered("").first().cloned().cloned()
         }
     }
 
@@ -475,12 +467,11 @@ impl App {
         };
 
         let mut cached_result = None;
-        if tool.preview {
-            if let PreviewResult::Success(content) =
+        if tool.preview
+            && let PreviewResult::Success(content) =
                 self.preview_manager.get_preview(tool, &item.content)
-            {
-                cached_result = Some(content);
-            }
+        {
+            cached_result = Some(content);
         }
 
         if let Some(content) = cached_result {
@@ -548,10 +539,11 @@ impl App {
         if matches!(res, PreviewResult::Loading) && self.preview_animation_progress.is_none() {
             self.preview_animation_progress = Some(0.0);
         }
-        if let Some(progress) = self.preview_animation_progress {
-            if progress >= 1.0 && !matches!(res, PreviewResult::Loading) {
-                self.preview_animation_progress = None;
-            }
+        if let Some(progress) = self.preview_animation_progress
+            && progress >= 1.0
+            && !matches!(res, PreviewResult::Loading)
+        {
+            self.preview_animation_progress = None;
         }
 
         Some(res)

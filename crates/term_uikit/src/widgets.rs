@@ -141,8 +141,8 @@ pub struct Card<'a> {
     pub content: Option<Box<dyn View + 'a>>,
 }
 
-impl<'a> Card<'a> {
-    pub fn new() -> Self {
+impl<'a> Default for Card<'a> {
+    fn default() -> Self {
         Self {
             title: None,
             active: false,
@@ -160,6 +160,9 @@ impl<'a> Card<'a> {
 }
 
 impl<'a> Card<'a> {
+    pub fn new() -> Self {
+        Self::default()
+    }
     pub fn with_title(mut self, title: impl Into<String>) -> Self {
         self.title = Some(title.into());
         self
@@ -219,9 +222,7 @@ impl<'a> Card<'a> {
             false
         };
 
-        if is_highlighted {
-            terminal.set_color(&self.primary_color)?;
-        } else if self.active {
+        if is_highlighted || self.active {
             terminal.set_color(&self.primary_color)?;
         } else {
             terminal.set_color(&self.dim_color)?;
@@ -888,7 +889,7 @@ impl<'a> Paragraph<'a> {
                 line_count += 1;
             } else {
                 let len = safe_line.chars().count();
-                line_count += (len + width - 1) / width;
+                line_count += len.div_ceil(width);
             }
         }
         line_count
@@ -924,20 +925,16 @@ impl<'a> View for Paragraph<'a> {
 
         let mut print_segment =
             |text: &str, is_hard_end: bool, v_idx: &mut usize, c_y: &mut u16| -> io::Result<()> {
-                if *v_idx >= scroll_offset {
-                    if *c_y < area.height {
-                        terminal.move_to(area.y + *c_y, area.x)?;
-                        terminal.print(text)?;
+                if *v_idx >= scroll_offset && *c_y < area.height {
+                    terminal.move_to(area.y + *c_y, area.x)?;
+                    terminal.print(text)?;
 
-                        if is_hard_end && self.show_newlines {
-                            if (text.len() as u16) < area.width {
-                                terminal.set_color(&self.newline_bg_color)?;
-                                terminal.print(" ")?;
-                                terminal.reset_color()?;
-                            }
-                        }
-                        *c_y += 1;
+                    if is_hard_end && self.show_newlines && (text.len() as u16) < area.width {
+                        terminal.set_color(&self.newline_bg_color)?;
+                        terminal.print(" ")?;
+                        terminal.reset_color()?;
                     }
+                    *c_y += 1;
                 }
                 *v_idx += 1;
                 Ok(())
