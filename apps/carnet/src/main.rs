@@ -9,7 +9,6 @@ use std::io::{self, Write};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
-use std::time::Duration;
 use term_uikit::widgets::{Input, ListState, ParagraphState};
 
 fn main() -> std::io::Result<()> {
@@ -58,32 +57,531 @@ fn store_command(config: Config, convert: bool) -> io::Result<()> {
     Ok(())
 }
 
-fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
-    let history = Arc::new(Mutex::new(HistoryManager::new(config.clone())));
-    let mut terminal = Terminal::new()?;
+struct App {
+    config: Config,
+    history: Arc<Mutex<HistoryManager>>,
+    mode: Mode,
+    search_query: String,
+    selected_id: Option<u64>,
+    selected_tool_index: usize,
+    history_state: ListState,
+    tool_state: ListState,
+    preview_manager: PreviewManager,
+    preview_state: ParagraphState,
+    preview_animation_progress: Option<f32>,
+    preview_focused: bool,
+    last_selected_id: Option<u64>,
+    last_selected_tool_index: usize,
+    should_render: bool,
+    should_quit: bool,
+    keep_open: bool,
+}
 
-    // Initial selected_id: current clipboard content
-    let mut selected_id: Option<u64> =
-        ClipboardManager::capture().map(|c| HistoryManager::calculate_id(&c));
+impl App {
+    fn new(config: Config, keep_open: bool) -> Self {
+        let history = Arc::new(Mutex::new(HistoryManager::new(config.clone())));
+        let selected_id = ClipboardManager::capture().map(|c| HistoryManager::calculate_id(&c));
 
-    // Ensure selected_id exists in history, otherwise default to None (will be first item)
-    if let Some(id) = selected_id {
-        let h = history.lock().unwrap();
-        if !h.get_filtered("").iter().any(|item| item.id == id) {
-            selected_id = None;
+        // Ensure selected_id exists in history
+        let mut initial_selected_id = selected_id;
+        if let Some(id) = selected_id {
+            let h = history.lock().unwrap();
+            if !h.get_filtered("").iter().any(|item| item.id == id) {
+                initial_selected_id = None;
+            }
+        }
+
+        Self {
+            config,
+            history,
+            mode: Mode::Normal,
+            search_query: String::new(),
+            selected_id: initial_selected_id,
+            selected_tool_index: 0,
+            history_state: ListState::new(),
+            tool_state: ListState::new(),
+            preview_manager: PreviewManager::new(),
+            preview_state: ParagraphState::new(),
+            preview_animation_progress: None,
+            preview_focused: false,
+            last_selected_id: initial_selected_id,
+            last_selected_tool_index: 0,
+            should_render: true,
+            should_quit: false,
+            keep_open,
         }
     }
 
-    let mut mode = Mode::Normal;
-    let mut search_query = String::new();
-    let mut selected_tool_index: usize = 0;
+    fn update(&mut self) {
+        if self.preview_manager.poll() {
+            self.should_render = true;
+        }
 
-    let mut history_state = ListState::new();
-    let mut tool_state = ListState::new();
+        if let Some(progress) = self.preview_animation_progress {
+            self.preview_animation_progress = Some(progress + 0.04);
+            self.should_render = true;
+        }
 
-    let mut last_item_id = selected_id;
+        {
+            let mut h = self.history.lock().unwrap();
+            if h.refresh() {
+                self.should_render = true;
+            }
+        }
 
-    // Channel for non-blocking-ish input
+        if self.selected_id != self.last_selected_id {
+            self.preview_state.reset();
+            self.last_selected_id = self.selected_id;
+            self.should_render = true;
+        }
+
+        if self.selected_tool_index != self.last_selected_tool_index {
+            self.preview_state.reset();
+            self.last_selected_tool_index = self.selected_tool_index;
+            self.should_render = true;
+        }
+    }
+
+    fn get_filtered_ids_and_content(&self) -> (Vec<(u64, ClipboardContent)>, usize) {
+        let history_lock = self.history.lock().unwrap();
+        let query = if matches!(self.mode, Mode::Tools) {
+            ""
+        } else {
+            &self.search_query
+        };
+        let filtered_items = history_lock.get_filtered(query);
+        let ids: Vec<(u64, ClipboardContent)> = filtered_items
+            .iter()
+            .map(|i| (i.id, i.content.clone()))
+            .collect();
+
+        let idx = self
+            .selected_id
+            .and_then(|id| ids.iter().position(|(fid, _)| *fid == id))
+            .unwrap_or(0);
+        (ids, idx)
+    }
+
+    fn handle_key(&mut self, key: Key) {
+        let (filtered_ids_and_content, current_index) = self.get_filtered_ids_and_content();
+
+        match self.mode {
+            Mode::Normal => match key {
+                Key::Char('q') | Key::Escape => self.should_quit = true,
+                Key::Char('/') => {
+                    self.mode = Mode::Search;
+                    self.should_render = true;
+                }
+                Key::Char('t') => {
+                    self.mode = Mode::Tools;
+                    self.search_query.clear();
+                    self.selected_tool_index = 0;
+                    self.should_render = true;
+                }
+                Key::Left => {
+                    self.preview_focused = false;
+                    self.should_render = true;
+                }
+                Key::Right => {
+                    self.preview_focused = true;
+                    self.should_render = true;
+                }
+                Key::Up | Key::Char('k') => {
+                    if self.preview_focused {
+                        self.preview_state.scroll_up(1);
+                    } else {
+                        self.history_state.scroll_up();
+                        if let Some((id, _)) =
+                            filtered_ids_and_content.get(self.history_state.selected())
+                        {
+                            self.selected_id = Some(*id);
+                        }
+                    }
+                    self.should_render = true;
+                }
+                Key::Down | Key::Char('j') => {
+                    if self.preview_focused {
+                        self.preview_state.scroll_down(1);
+                    } else {
+                        self.history_state.scroll_down();
+                        if let Some((id, _)) =
+                            filtered_ids_and_content.get(self.history_state.selected())
+                        {
+                            self.selected_id = Some(*id);
+                        }
+                    }
+                    self.should_render = true;
+                }
+                Key::PageUp => {
+                    if self.preview_focused {
+                        self.preview_state.scroll_page_up();
+                    } else {
+                        self.history_state.scroll_page_up();
+                        if let Some((id, _)) =
+                            filtered_ids_and_content.get(self.history_state.selected())
+                        {
+                            self.selected_id = Some(*id);
+                        }
+                    }
+                    self.should_render = true;
+                }
+                Key::PageDown => {
+                    if self.preview_focused {
+                        self.preview_state.scroll_page_down();
+                    } else {
+                        self.history_state.scroll_page_down();
+                        if let Some((id, _)) =
+                            filtered_ids_and_content.get(self.history_state.selected())
+                        {
+                            self.selected_id = Some(*id);
+                        }
+                    }
+                    self.should_render = true;
+                }
+                Key::Char('p') => {
+                    if let Some(id) = self.selected_id {
+                        let mut h_write = self.history.lock().unwrap();
+                        h_write.toggle_pin(id);
+                        self.should_render = true;
+                    }
+                }
+                Key::Char('c') => {
+                    ClipboardManager::clear().ok();
+                    self.should_render = true;
+                }
+                Key::Backspace => {
+                    if let Some(id) = self.selected_id {
+                        if let Some(current_clipboard) = ClipboardManager::capture()
+                            && HistoryManager::calculate_id(&current_clipboard) == id
+                        {
+                            let _ = ClipboardManager::clear();
+                        }
+
+                        let mut h_write = self.history.lock().unwrap();
+                        h_write.delete(id);
+
+                        let next_filtered = h_write.get_filtered(&self.search_query);
+                        if !next_filtered.is_empty() {
+                            // Sophisticated selection following: next available, or previous if none
+                            let next_idx = if current_index < next_filtered.len() {
+                                current_index
+                            } else {
+                                next_filtered.len().saturating_sub(1)
+                            };
+                            self.selected_id = Some(next_filtered[next_idx].id);
+                        } else {
+                            self.selected_id = None;
+                        }
+                        self.should_render = true;
+                    }
+                }
+                Key::Enter => {
+                    if let Some((id, content)) = filtered_ids_and_content.get(current_index) {
+                        ClipboardManager::copy(content, &self.config).ok();
+                        let id_to_move = *id;
+                        let mut h_write = self.history.lock().unwrap();
+                        h_write.move_to_top(id_to_move);
+
+                        if !self.keep_open {
+                            self.should_quit = true;
+                        }
+                        self.should_render = true;
+                    }
+                }
+                _ => {}
+            },
+            Mode::Search => match key {
+                Key::Escape => {
+                    self.mode = Mode::Normal;
+                    self.search_query.clear();
+                    let h = self.history.lock().unwrap();
+                    self.selected_id = h.get_filtered(&self.search_query).first().map(|i| i.id);
+                    self.should_render = true;
+                }
+                Key::Up | Key::Char('k') => {
+                    self.history_state.scroll_up();
+                    if let Some((id, _)) =
+                        filtered_ids_and_content.get(self.history_state.selected())
+                    {
+                        self.selected_id = Some(*id);
+                    }
+                    self.should_render = true;
+                }
+                Key::Down | Key::Char('j') => {
+                    self.history_state.scroll_down();
+                    if let Some((id, _)) =
+                        filtered_ids_and_content.get(self.history_state.selected())
+                    {
+                        self.selected_id = Some(*id);
+                    }
+                    self.should_render = true;
+                }
+                Key::PageUp => {
+                    self.history_state.scroll_page_up();
+                    if let Some((id, _)) =
+                        filtered_ids_and_content.get(self.history_state.selected())
+                    {
+                        self.selected_id = Some(*id);
+                    }
+                    self.should_render = true;
+                }
+                Key::PageDown => {
+                    self.history_state.scroll_page_down();
+                    if let Some((id, _)) =
+                        filtered_ids_and_content.get(self.history_state.selected())
+                    {
+                        self.selected_id = Some(*id);
+                    }
+                    self.should_render = true;
+                }
+                Key::Enter => {
+                    self.mode = Mode::Normal;
+                    self.should_render = true;
+                }
+                _ => {
+                    if Input::handle_event(&mut self.search_query, key) {
+                        self.should_render = true;
+                        let h = self.history.lock().unwrap();
+                        self.selected_id = h.get_filtered(&self.search_query).first().map(|i| i.id);
+                    }
+                }
+            },
+            Mode::Tools => match key {
+                Key::Escape => {
+                    self.mode = Mode::Normal;
+                    self.search_query.clear();
+                    self.selected_id = self.last_selected_id;
+                    self.preview_manager.clear();
+                    self.preview_focused = false;
+                    self.preview_state.reset();
+                    self.should_render = true;
+                }
+                Key::Left => {
+                    self.preview_focused = false;
+                    self.should_render = true;
+                }
+                Key::Right => {
+                    self.preview_focused = true;
+                    self.should_render = true;
+                }
+                Key::PageUp => {
+                    if self.preview_focused {
+                        self.preview_state.scroll_page_up();
+                    } else {
+                        self.tool_state.scroll_page_up();
+                        self.selected_tool_index = self.tool_state.selected();
+                    }
+                    self.should_render = true;
+                }
+                Key::PageDown => {
+                    if self.preview_focused {
+                        self.preview_state.scroll_page_down();
+                    } else {
+                        self.tool_state.scroll_page_down();
+                        self.selected_tool_index = self.tool_state.selected();
+                    }
+                    self.should_render = true;
+                }
+                Key::Up | Key::Char('k') => {
+                    if self.preview_focused {
+                        self.preview_state.scroll_up(1);
+                    } else {
+                        self.tool_state.scroll_up();
+                        self.selected_tool_index = self.tool_state.selected();
+                    }
+                    self.should_render = true;
+                }
+                Key::Down | Key::Char('j') => {
+                    if self.preview_focused {
+                        self.preview_state.scroll_down(1);
+                    } else {
+                        self.tool_state.scroll_down();
+                        self.selected_tool_index = self.tool_state.selected();
+                    }
+                    self.should_render = true;
+                }
+                Key::Enter => {
+                    let selected_item = self.get_selected_item();
+                    if let Some(item) = selected_item {
+                        let content_type = match item.content {
+                            ClipboardContent::Text(_) => "text",
+                            ClipboardContent::Image(_) => "image",
+                        };
+                        let filtered_tools = self.get_filtered_tools(content_type);
+                        if !filtered_tools.is_empty() {
+                            let tool_idx = self.selected_tool_index.min(filtered_tools.len() - 1);
+                            let tool = &filtered_tools[tool_idx];
+                            self.execute_tool(tool, &item);
+                        }
+                    }
+                    self.mode = Mode::Normal;
+                    self.search_query.clear();
+                    self.selected_id = None;
+                    self.preview_manager.clear();
+                    self.should_render = true;
+                }
+                _ => {
+                    if Input::handle_event(&mut self.search_query, key) {
+                        self.selected_tool_index = 0;
+                        self.should_render = true;
+                    }
+                }
+            },
+        }
+    }
+
+    fn get_selected_item(&self) -> Option<carnet::history::HistoryItem> {
+        let h = self.history.lock().unwrap();
+        let filtered = h.get_filtered("");
+        if let Some(id) = self.selected_id {
+            filtered.iter().find(|i| i.id == id).map(|&i| i.clone())
+        } else {
+            filtered.first().map(|&i| i.clone())
+        }
+    }
+
+    fn get_filtered_tools(&self, content_type: &str) -> Vec<Tool> {
+        self.config
+            .tools
+            .iter()
+            .filter(|tool| {
+                let tool_ctx = tool.content_type.to_lowercase();
+                (tool_ctx == "both" || tool_ctx == content_type)
+                    && fuzzy_match(&self.search_query, &tool.name)
+            })
+            .cloned()
+            .collect()
+    }
+
+    fn execute_tool(&mut self, tool: &Tool, item: &carnet::history::HistoryItem) {
+        let content_type = match item.content {
+            ClipboardContent::Text(_) => "text",
+            ClipboardContent::Image(_) => "image",
+        };
+
+        let mut cached_result = None;
+        if tool.preview {
+            if let PreviewResult::Success(content) =
+                self.preview_manager.get_preview(tool, &item.content)
+            {
+                cached_result = Some(content);
+            }
+        }
+
+        if let Some(content) = cached_result {
+            ClipboardManager::copy(&content, &self.config).ok();
+        } else {
+            let child = Command::new("sh")
+                .arg("-c")
+                .arg(&tool.bin)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .spawn()
+                .ok();
+
+            if let Some(mut child) = child {
+                if let Some(mut stdin) = child.stdin.take() {
+                    match &item.content {
+                        ClipboardContent::Text(t) => {
+                            stdin.write_all(t.as_bytes()).ok();
+                        }
+                        ClipboardContent::Image(d) => {
+                            stdin.write_all(d).ok();
+                        }
+                    }
+                }
+                let output = child.wait_with_output().ok();
+                if let Some(output) = output
+                    && output.status.success()
+                    && !output.stdout.is_empty()
+                {
+                    let new_content = if content_type == "text" {
+                        ClipboardContent::Text(String::from_utf8_lossy(&output.stdout).to_string())
+                    } else {
+                        ClipboardContent::Image(output.stdout)
+                    };
+                    ClipboardManager::copy(&new_content, &self.config).ok();
+                }
+            }
+        }
+    }
+
+    fn get_preview_result(&mut self) -> Option<PreviewResult> {
+        if !matches!(self.mode, Mode::Tools) {
+            self.preview_animation_progress = None;
+            return None;
+        }
+
+        let selected_item = self.get_selected_item()?;
+        let content_type = match selected_item.content {
+            ClipboardContent::Text(_) => "text",
+            ClipboardContent::Image(_) => "image",
+        };
+
+        let filtered_tools = self.get_filtered_tools(content_type);
+        if filtered_tools.is_empty() {
+            self.preview_animation_progress = None;
+            return None;
+        }
+
+        let tool_idx = self.selected_tool_index.min(filtered_tools.len() - 1);
+        let tool = &filtered_tools[tool_idx];
+
+        if !tool.preview {
+            self.preview_animation_progress = None;
+            return None;
+        }
+
+        let res = self
+            .preview_manager
+            .get_preview(tool, &selected_item.content);
+
+        // Handle animation progress
+        if matches!(res, PreviewResult::Loading) && self.preview_animation_progress.is_none() {
+            self.preview_animation_progress = Some(0.0);
+        }
+        if let Some(progress) = self.preview_animation_progress {
+            if progress >= 1.0 && !matches!(res, PreviewResult::Loading) {
+                self.preview_animation_progress = None;
+            }
+        }
+
+        Some(res)
+    }
+
+    fn render(&mut self, terminal: &mut Terminal) -> io::Result<()> {
+        if !self.should_render {
+            return Ok(());
+        }
+
+        let preview_result = self.get_preview_result();
+        let active_id = ClipboardManager::capture().map(|c| HistoryManager::calculate_id(&c));
+
+        Renderer::render(
+            terminal,
+            &self.history,
+            &self.mode,
+            &self.search_query,
+            self.selected_id,
+            active_id,
+            &mut self.history_state,
+            &mut self.tool_state,
+            &self.config,
+            preview_result,
+            self.preview_animation_progress,
+            self.preview_focused,
+            &mut self.preview_state,
+        )?;
+
+        self.should_render = false;
+        Ok(())
+    }
+}
+
+fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
+    let mut terminal = Terminal::new()?;
+    let mut app = App::new(config, keep_open);
+
     let (tx, rx) = mpsc::channel::<Key>();
     thread::spawn(move || {
         loop {
@@ -95,487 +593,27 @@ fn show_command(config: Config, keep_open: bool) -> io::Result<()> {
     });
 
     let mut last_size = terminal.size();
-    let mut should_render = true;
-    let mut preview_manager = PreviewManager::new();
-    let mut preview_animation_progress: Option<f32> = None;
-    let mut preview_focused = false;
-    let mut preview_state = ParagraphState::new();
-    let mut last_selected_id = selected_id;
-    let mut last_selected_tool_index = selected_tool_index;
 
     loop {
-        if preview_manager.poll() {
-            should_render = true;
-        }
-
-        if let Some(progress) = preview_animation_progress {
-            preview_animation_progress = Some(progress + 0.04);
-            should_render = true;
-        }
-
-        {
-            let mut h = history.lock().unwrap();
-            if h.refresh() {
-                should_render = true;
-            }
-        }
+        app.update();
 
         let current_size = terminal.size();
         if current_size != last_size {
             last_size = current_size;
-            should_render = true;
+            app.should_render = true;
         }
 
-        if selected_id != last_selected_id {
-            preview_state.reset();
-            last_selected_id = selected_id;
-            should_render = true;
+        app.render(&mut terminal)?;
+
+        if app.should_quit {
+            break;
         }
 
-        if selected_tool_index != last_selected_tool_index {
-            preview_state.reset();
-            last_selected_tool_index = selected_tool_index;
-            should_render = true;
+        while let Ok(key) = rx.try_recv() {
+            app.handle_key(key);
         }
 
-        // Render UI ONLY if something changed
-        if should_render {
-            // Sync ListState before rendering
-            let filtered_ids: Vec<u64> = {
-                let h = history.lock().unwrap();
-                let query = if matches!(mode, Mode::Tools) {
-                    ""
-                } else {
-                    &search_query
-                };
-                h.get_filtered(query).iter().map(|i| i.id).collect()
-            };
-
-            let current_idx = selected_id
-                .and_then(|id| filtered_ids.iter().position(|&x| x == id))
-                .unwrap_or(0);
-            history_state.select(current_idx);
-            tool_state.select(selected_tool_index);
-
-            let preview_result = if matches!(mode, Mode::Tools) {
-                let selected_item = get_selected_item(&history, last_item_id);
-
-                if let Some(item) = selected_item {
-                    let content_type = match item.content {
-                        ClipboardContent::Text(_) => "text",
-                        ClipboardContent::Image(_) => "image",
-                    };
-
-                    let filtered_tools = get_filtered_tools(&config, content_type, &search_query);
-
-                    if !filtered_tools.is_empty() {
-                        let tool_idx = selected_tool_index.min(filtered_tools.len() - 1);
-                        let tool = filtered_tools[tool_idx];
-                        if tool.preview {
-                            let res = preview_manager.get_preview(tool, &item.content);
-
-                            // Start animation if loading
-                            if matches!(res, PreviewResult::Loading)
-                                && preview_animation_progress.is_none()
-                            {
-                                preview_animation_progress = Some(0.0);
-                            }
-
-                            // Stop animation only if we reached the endof a tturn AND result is not loading
-                            if let Some(progress) = preview_animation_progress {
-                                if progress >= 1.0 && !matches!(res, PreviewResult::Loading) {
-                                    preview_animation_progress = None;
-                                }
-                            }
-
-                            Some(res)
-                        } else {
-                            preview_animation_progress = None;
-                            None
-                        }
-                    } else {
-                        preview_animation_progress = None;
-                        None
-                    }
-                } else {
-                    preview_animation_progress = None;
-                    None
-                }
-            } else {
-                preview_animation_progress = None;
-                None
-            };
-
-            Renderer::render(
-                &mut terminal,
-                &history,
-                &mode,
-                &search_query,
-                selected_id,
-                ClipboardManager::capture().map(|c| HistoryManager::calculate_id(&c)),
-                &mut history_state,
-                &mut tool_state,
-                &config,
-                preview_result,
-                preview_animation_progress.map(|p| p % 1.0),
-                preview_focused,
-                &mut preview_state,
-            )?;
-            should_render = false;
-        }
-
-        // Wait for input
-        let timeout = if preview_animation_progress.is_some() {
-            Duration::from_millis(10)
-        } else {
-            Duration::from_millis(config.refresh_rate_ms)
-        };
-
-        if let Ok(key) = rx.recv_timeout(timeout) {
-            should_render = true;
-
-            let history_query = if matches!(mode, Mode::Tools) {
-                ""
-            } else {
-                &search_query
-            };
-            let filtered_ids_and_content: Vec<(u64, ClipboardContent)> = {
-                let h = history.lock().unwrap();
-                h.get_filtered(history_query)
-                    .iter()
-                    .map(|&i| (i.id, i.content.clone()))
-                    .collect()
-            };
-
-            // Auto-select first item if current selection is invalid
-            if selected_id.is_none()
-                && !filtered_ids_and_content.is_empty()
-                && !matches!(mode, Mode::Tools)
-            {
-                selected_id = Some(filtered_ids_and_content[0].0);
-            } else if let Some(id) = selected_id {
-                // If we have a selection but it's not in the filtered list anymore, jump to first match
-                if !filtered_ids_and_content.iter().any(|(iid, _)| *iid == id)
-                    && !filtered_ids_and_content.is_empty()
-                {
-                    selected_id = Some(filtered_ids_and_content[0].0);
-                }
-            }
-
-            let current_index = selected_id
-                .and_then(|id| {
-                    filtered_ids_and_content
-                        .iter()
-                        .position(|(iid, _)| *iid == id)
-                })
-                .unwrap_or(0);
-
-            match mode {
-                Mode::Normal => match key {
-                    Key::Char('q') | Key::Escape => break,
-                    Key::Left => {
-                        preview_focused = false;
-                    }
-                    Key::Right => {
-                        preview_focused = true;
-                    }
-                    Key::Char('/') => {
-                        mode = Mode::Search;
-                    }
-                    Key::Char('t') => {
-                        mode = Mode::Tools;
-                        search_query.clear();
-                        selected_tool_index = 0;
-                        last_item_id = selected_id;
-                        preview_manager.clear();
-                        preview_focused = false;
-                    }
-                    Key::Up | Key::Char('k') => {
-                        if preview_focused {
-                            preview_state.scroll_up(1);
-                        } else {
-                            history_state.scroll_up();
-                            if let Some((id, _)) = filtered_ids_and_content.get(history_state.selected()) {
-                                selected_id = Some(*id);
-                            }
-                        }
-                    }
-                    Key::Down | Key::Char('j') => {
-                        if preview_focused {
-                            preview_state.scroll_down(1);
-                        } else {
-                            history_state.scroll_down();
-                            if let Some((id, _)) = filtered_ids_and_content.get(history_state.selected()) {
-                                selected_id = Some(*id);
-                            }
-                        }
-                    }
-                    Key::PageUp => {
-                        if preview_focused {
-                            preview_state.scroll_page_up();
-                        } else {
-                            history_state.scroll_page_up();
-                            if let Some((id, _)) = filtered_ids_and_content.get(history_state.selected()) {
-                                selected_id = Some(*id);
-                            }
-                        }
-                    }
-                    Key::PageDown => {
-                        if preview_focused {
-                            preview_state.scroll_page_down();
-                        } else {
-                            history_state.scroll_page_down();
-                            if let Some((id, _)) = filtered_ids_and_content.get(history_state.selected()) {
-                                selected_id = Some(*id);
-                            }
-                        }
-                    }
-                    Key::Char('p') => {
-                        if let Some(id) = selected_id {
-                            let mut h_write = history.lock().unwrap();
-                            h_write.toggle_pin(id);
-                        }
-                    }
-                    Key::Char('c') => {
-                        ClipboardManager::clear().ok();
-                    }
-                    Key::Backspace => {
-                        if let Some(id) = selected_id {
-                            // Check if the item being deleted is currently in the clipboard
-                            if let Some(current_clipboard) = ClipboardManager::capture()
-                                && HistoryManager::calculate_id(&current_clipboard) == id
-                            {
-                                let _ = ClipboardManager::clear();
-                            }
-
-                            let mut h_write = history.lock().unwrap();
-                            h_write.delete(id);
-
-                            if filtered_ids_and_content.len() > 1 {
-                                if current_index < filtered_ids_and_content.len() - 1 {
-                                    selected_id =
-                                        Some(filtered_ids_and_content[current_index + 1].0);
-                                } else {
-                                    selected_id =
-                                        Some(filtered_ids_and_content[current_index - 1].0);
-                                }
-                            } else {
-                                selected_id = None;
-                            }
-                        }
-                    }
-                    Key::Enter => {
-                        if let Some((id, content)) = filtered_ids_and_content.get(current_index) {
-                            ClipboardManager::copy(content, &config).ok();
-                            let id_to_move = *id;
-
-                            let mut h_write = history.lock().unwrap();
-                            h_write.move_to_top(id_to_move);
-
-                            if !keep_open {
-                                break;
-                            }
-                        }
-                    }
-                    _ => {}
-                },
-                Mode::Search => match key {
-                    Key::Escape => {
-                        mode = Mode::Normal;
-                        search_query.clear();
-                        let h = history.lock().unwrap();
-                        selected_id = h.get_filtered(&search_query).first().map(|i| i.id);
-                    }
-                    Key::Up | Key::Char('k') => {
-                        history_state.scroll_up();
-                        if let Some((id, _)) = filtered_ids_and_content.get(history_state.selected()) {
-                            selected_id = Some(*id);
-                        }
-                    }
-                    Key::Down | Key::Char('j') => {
-                        history_state.scroll_down();
-                        if let Some((id, _)) = filtered_ids_and_content.get(history_state.selected()) {
-                            selected_id = Some(*id);
-                        }
-                    }
-                    Key::PageUp => {
-                        history_state.scroll_page_up();
-                        if let Some((id, _)) = filtered_ids_and_content.get(history_state.selected()) {
-                            selected_id = Some(*id);
-                        }
-                    }
-                    Key::PageDown => {
-                        history_state.scroll_page_down();
-                        if let Some((id, _)) = filtered_ids_and_content.get(history_state.selected()) {
-                            selected_id = Some(*id);
-                        }
-                    }
-                    Key::Enter => {
-                        mode = Mode::Normal;
-                    }
-                    _ => {
-                        Input::handle_event(&mut search_query, key);
-                    }
-                },
-                Mode::Tools => match key {
-                    Key::Escape => {
-                        mode = Mode::Normal;
-                        search_query.clear();
-                        selected_id = last_item_id;
-                        preview_manager.clear();
-                        preview_focused = false;
-                        preview_state.reset();
-                    }
-                    Key::Left => {
-                        preview_focused = false;
-                    }
-                    Key::Right => {
-                        preview_focused = true;
-                    }
-                    Key::PageUp => {
-                        if preview_focused {
-                            preview_state.scroll_page_up();
-                        } else {
-                            tool_state.scroll_page_up();
-                            selected_tool_index = tool_state.selected();
-                        }
-                    }
-                    Key::PageDown => {
-                        if preview_focused {
-                            preview_state.scroll_page_down();
-                        } else {
-                            tool_state.scroll_page_down();
-                            selected_tool_index = tool_state.selected();
-                        }
-                    }
-                    Key::Up | Key::Char('k') => {
-                        if preview_focused {
-                            preview_state.scroll_up(1);
-                        } else {
-                            tool_state.scroll_up();
-                            selected_tool_index = tool_state.selected();
-                        }
-                    }
-                    Key::Down | Key::Char('j') => {
-                        if preview_focused {
-                            preview_state.scroll_down(1);
-                        } else {
-                            tool_state.scroll_down();
-                            selected_tool_index = tool_state.selected();
-                        }
-                    }
-                    Key::Enter => {
-                        // Execute tool
-                        let selected_item = get_selected_item(&history, last_item_id);
-
-                        if let Some(item) = selected_item {
-                            let content_type = match item.content {
-                                ClipboardContent::Text(_) => "text",
-                                ClipboardContent::Image(_) => "image",
-                            };
-
-                            let filtered_tools =
-                                get_filtered_tools(&config, content_type, &search_query);
-
-                            if !filtered_tools.is_empty() {
-                                let tool_idx = selected_tool_index.min(filtered_tools.len() - 1);
-                                let tool = filtered_tools[tool_idx];
-
-                                // Check if we have a cached result
-                                let mut cached_result = None;
-                                if tool.preview {
-                                    if let PreviewResult::Success(content) =
-                                        preview_manager.get_preview(tool, &item.content)
-                                    {
-                                        cached_result = Some(content);
-                                    }
-                                }
-
-                                if let Some(content) = cached_result {
-                                    ClipboardManager::copy(&content, &config).ok();
-                                } else {
-                                    let child = Command::new("sh")
-                                        .arg("-c")
-                                        .arg(&tool.bin)
-                                        .stdin(Stdio::piped())
-                                        .stdout(Stdio::piped())
-                                        .spawn()
-                                        .ok();
-
-                                    if let Some(mut child) = child {
-                                        if let Some(mut stdin) = child.stdin.take() {
-                                            match &item.content {
-                                                ClipboardContent::Text(t) => {
-                                                    stdin.write_all(t.as_bytes()).ok();
-                                                }
-                                                ClipboardContent::Image(d) => {
-                                                    stdin.write_all(d).ok();
-                                                }
-                                            }
-                                        }
-
-                                        let output = child.wait_with_output().ok();
-                                        if let Some(output) = output
-                                            && output.status.success()
-                                            && !output.stdout.is_empty()
-                                        {
-                                            let new_content = if content_type == "text" {
-                                                ClipboardContent::Text(
-                                                    String::from_utf8_lossy(&output.stdout)
-                                                        .to_string(),
-                                                )
-                                            } else {
-                                                ClipboardContent::Image(output.stdout)
-                                            };
-
-                                            ClipboardManager::copy(&new_content, &config).ok();
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        mode = Mode::Normal;
-                        search_query.clear();
-                        selected_id = None; // Reset to top
-                        preview_manager.clear();
-                    }
-                    _ => {
-                        if Input::handle_event(&mut search_query, key) {
-                            selected_tool_index = 0;
-                        }
-                    }
-                },
-            }
-        }
+        thread::sleep(std::time::Duration::from_millis(10));
     }
     Ok(())
-}
-
-fn get_selected_item(
-    history: &Arc<Mutex<HistoryManager>>,
-    last_item_id: Option<u64>,
-) -> Option<carnet::history::HistoryItem> {
-    let h = history.lock().unwrap();
-    let filtered = h.get_filtered("");
-    if let Some(id) = last_item_id {
-        filtered.iter().find(|i| i.id == id).map(|&i| i.clone())
-    } else {
-        filtered.first().map(|&i| i.clone())
-    }
-}
-
-fn get_filtered_tools<'a>(
-    config: &'a Config,
-    content_type: &str,
-    search_query: &str,
-) -> Vec<&'a Tool> {
-    config
-        .tools
-        .iter()
-        .filter(|tool| {
-            let tool_ctx = tool.content_type.to_lowercase();
-            (tool_ctx == "both" || tool_ctx == content_type)
-                && fuzzy_match(search_query, &tool.name)
-        })
-        .collect()
 }

@@ -38,6 +38,8 @@ impl From<Sizing> for Constraint {
 pub struct Flex<'a> {
     direction: Direction,
     children: Vec<(Box<dyn View + 'a>, Sizing)>,
+    last_render_area: Option<Rect>,
+    cached_rects: Vec<Rect>,
 }
 
 impl<'a> Flex<'a> {
@@ -45,6 +47,8 @@ impl<'a> Flex<'a> {
         Self {
             direction,
             children: Vec::new(),
+            last_render_area: None,
+            cached_rects: Vec::new(),
         }
     }
 
@@ -97,21 +101,25 @@ impl<'a> View for Flex<'a> {
     }
 
     fn render(&mut self, area: Rect, terminal: &mut Terminal) -> io::Result<()> {
-        let constraints: Vec<Constraint> = self.children.iter().map(|(_, s)| (*s).into()).collect();
-        let layout = Layout::new()
-            .direction(self.direction)
-            .constraints(constraints);
+        if self.last_render_area != Some(area) {
+            let constraints: Vec<Constraint> =
+                self.children.iter().map(|(_, s)| (*s).into()).collect();
+            let layout = Layout::new()
+                .direction(self.direction)
+                .constraints(constraints);
 
-        let measures: Vec<(u16, u16)> = self
-            .children
-            .iter()
-            .map(|(v, _)| v.measure(Some(area.width), Some(area.height)))
-            .collect();
+            let measures: Vec<(u16, u16)> = self
+                .children
+                .iter()
+                .map(|(v, _)| v.measure(Some(area.width), Some(area.height)))
+                .collect();
 
-        let rects = layout.split_with_measures(area, &measures);
+            self.cached_rects = layout.split_with_measures(area, &measures);
+            self.last_render_area = Some(area);
+        }
 
         for (i, (child, _)) in self.children.iter_mut().enumerate() {
-            if let Some(rect) = rects.get(i) {
+            if let Some(rect) = self.cached_rects.get(i) {
                 child.render(*rect, terminal)?;
             }
         }

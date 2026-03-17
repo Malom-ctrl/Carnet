@@ -337,10 +337,7 @@ impl ImageProcessor {
         let c = (img_w as f32 * scale).max(1.0) as u16;
         let r = ((img_h as f32 * scale) / cell_ratio).max(1.0) as u16;
 
-        terminal
-            .move_to(y + (h.saturating_sub(r) / 2), x + (w.saturating_sub(c) / 2))
-            .ok();
-
+        let mut image_full_seq = String::new();
         for (i, chunk) in chunks.iter().enumerate() {
             let m = if i < chunks.len() - 1 { 1 } else { 0 };
             let chunk_str = std::str::from_utf8(chunk).unwrap_or("");
@@ -354,8 +351,19 @@ impl ImageProcessor {
             if in_tmux {
                 seq = format!("\x1bPtmux;{}\x1b\\", seq.replace("\x1b", "\x1b\x1b"));
             }
-            terminal.print(&seq).ok();
+            image_full_seq.push_str(&seq);
         }
+
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        rgba.hash(&mut hasher);
+        let hash = hasher.finish();
+
+        let target_x = x + (w.saturating_sub(c) / 2);
+        let target_y = y + (h.saturating_sub(r) / 2);
+
+        terminal.set_image(target_x, target_y, c, r, hash, image_full_seq);
         Ok(())
     }
 }

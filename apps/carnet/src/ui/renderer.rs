@@ -37,6 +37,7 @@ impl Renderer {
         let h_lock = history.lock().unwrap();
         let all_items = h_lock.items();
         let (rows, cols) = terminal.size();
+        terminal.resize(cols, rows);
         let area = Rect::new(0, 0, cols, rows);
 
         // Determine context content type

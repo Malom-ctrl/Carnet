@@ -1,6 +1,5 @@
 use crate::clipboard::ClipboardContent;
 use crate::config::Config;
-use crate::ui::fuzzy_match;
 use std::collections::{HashMap, VecDeque, hash_map::DefaultHasher};
 use std::fs::{File, OpenOptions};
 use std::hash::{Hash, Hasher};
@@ -195,28 +194,49 @@ impl HistoryManager {
 
     /// Returns a list of items filtered by a query, in chronological order, pinned items first
     pub fn get_filtered(&self, query: &str) -> Vec<&HistoryItem> {
-        let mut pinned: Vec<&HistoryItem> = Vec::new();
-        let mut others: Vec<&HistoryItem> = Vec::new();
+        let mut matches: Vec<(&HistoryItem, i32)> = Vec::new();
 
         for id in &self.order {
             if let Some(item) = self.items.get(id) {
-                let matches = match &item.content {
-                    ClipboardContent::Text(t) => fuzzy_match(query, t),
-                    ClipboardContent::Image(_) => query.is_empty() || fuzzy_match(query, "[image]"),
+                let score = match &item.content {
+                    ClipboardContent::Text(t) => crate::ui::score_fuzzy(query, t),
+                    ClipboardContent::Image(_) => {
+                        if query.is_empty() {
+                            1
+                        } else {
+                            crate::ui::score_fuzzy(query, "[image]")
+                        }
+                    }
                 };
 
-                if matches {
-                    if item.is_pinned {
-                        pinned.push(item);
-                    } else {
-                        others.push(item);
-                    }
+                if score > 0 {
+                    matches.push((item, score));
                 }
             }
         }
 
-        pinned.extend(others);
-        pinned
+        if query.is_empty() {
+            // Default order: Pinned first, then chronological
+            let mut pinned = Vec::new();
+            let mut others = Vec::new();
+            for (item, _) in matches {
+                if item.is_pinned {
+                    pinned.push(item);
+                } else {
+                    others.push(item);
+                }
+            }
+            pinned.extend(others);
+            pinned
+        } else {
+            // Sort by score (descending), then pinned, then chronological
+            matches.sort_by(|a, b| {
+                b.1.cmp(&a.1) // Higher score first
+                    .then_with(|| b.0.is_pinned.cmp(&a.0.is_pinned))
+                    .then_with(|| b.0.timestamp.cmp(&a.0.timestamp))
+            });
+            matches.into_iter().map(|(item, _)| item).collect()
+        }
     }
 
     pub fn items(&self) -> HashMap<u64, HistoryItem> {
