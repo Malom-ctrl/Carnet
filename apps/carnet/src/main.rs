@@ -142,28 +142,82 @@ impl App {
         }
     }
 
-    fn get_filtered_ids_and_content(&self) -> (Vec<(u64, ClipboardContent)>, usize) {
+    fn get_history_context(&self) -> (Vec<carnet::history::HistoryItem>, usize) {
         let history_lock = self.history.lock().unwrap();
-        let query = if matches!(self.mode, Mode::Tools) {
-            ""
+        if matches!(self.mode, Mode::Tools) {
+            // In tools mode, the history list is just the selected item
+            let item = if let Some(id) = self.selected_id {
+                history_lock.items().get(&id).cloned()
+            } else {
+                history_lock
+                    .get_filtered("")
+                    .first()
+                    .cloned()
+                    .map(|i| i.clone())
+            };
+            let items = item.map(|i| vec![i]).unwrap_or_default();
+            (items, 0)
         } else {
-            &self.search_query
+            let filtered_items = history_lock.get_filtered(&self.search_query);
+            let items: Vec<carnet::history::HistoryItem> =
+                filtered_items.iter().map(|&i| i.clone()).collect();
+            let idx = self
+                .selected_id
+                .and_then(|id| items.iter().position(|i| i.id == id))
+                .unwrap_or(0);
+            (items, idx)
+        }
+    }
+
+    fn get_tools_context(&self) -> (Vec<Tool>, usize) {
+        let selected_item = self.get_selected_item();
+        let content_type = match selected_item.as_ref().map(|i| &i.content) {
+            Some(ClipboardContent::Text(_)) => "text",
+            Some(ClipboardContent::Image(_)) => "image",
+            None => "none",
         };
-        let filtered_items = history_lock.get_filtered(query);
-        let ids: Vec<(u64, ClipboardContent)> = filtered_items
+
+        let filtered_tools: Vec<Tool> = self
+            .config
+            .tools
             .iter()
-            .map(|i| (i.id, i.content.clone()))
+            .filter(|tool| {
+                let tool_ctx = tool.content_type.to_lowercase();
+                let ctx_match = if content_type == "none" {
+                    true
+                } else {
+                    tool_ctx == "both" || tool_ctx == content_type
+                };
+                ctx_match && fuzzy_match(&self.search_query, &tool.name)
+            })
+            .cloned()
             .collect();
 
-        let idx = self
-            .selected_id
-            .and_then(|id| ids.iter().position(|(fid, _)| *fid == id))
-            .unwrap_or(0);
-        (ids, idx)
+        let idx = if filtered_tools.is_empty() {
+            0
+        } else {
+            self.selected_tool_index
+                .min(filtered_tools.len().saturating_sub(1))
+        };
+
+        (filtered_tools, idx)
+    }
+
+    fn get_selected_item(&self) -> Option<carnet::history::HistoryItem> {
+        let history_lock = self.history.lock().unwrap();
+        if let Some(id) = self.selected_id {
+            history_lock.items().get(&id).cloned()
+        } else {
+            history_lock
+                .get_filtered("")
+                .first()
+                .cloned()
+                .map(|i| i.clone())
+        }
     }
 
     fn handle_key(&mut self, key: Key) {
-        let (filtered_ids_and_content, current_index) = self.get_filtered_ids_and_content();
+        let (filtered_items, current_index) = self.get_history_context();
 
         match self.mode {
             Mode::Normal => match key {
@@ -191,10 +245,8 @@ impl App {
                         self.preview_state.scroll_up(1);
                     } else {
                         self.history_state.scroll_up();
-                        if let Some((id, _)) =
-                            filtered_ids_and_content.get(self.history_state.selected())
-                        {
-                            self.selected_id = Some(*id);
+                        if let Some(item) = filtered_items.get(self.history_state.selected()) {
+                            self.selected_id = Some(item.id);
                         }
                     }
                     self.should_render = true;
@@ -204,10 +256,8 @@ impl App {
                         self.preview_state.scroll_down(1);
                     } else {
                         self.history_state.scroll_down();
-                        if let Some((id, _)) =
-                            filtered_ids_and_content.get(self.history_state.selected())
-                        {
-                            self.selected_id = Some(*id);
+                        if let Some(item) = filtered_items.get(self.history_state.selected()) {
+                            self.selected_id = Some(item.id);
                         }
                     }
                     self.should_render = true;
@@ -217,10 +267,8 @@ impl App {
                         self.preview_state.scroll_page_up();
                     } else {
                         self.history_state.scroll_page_up();
-                        if let Some((id, _)) =
-                            filtered_ids_and_content.get(self.history_state.selected())
-                        {
-                            self.selected_id = Some(*id);
+                        if let Some(item) = filtered_items.get(self.history_state.selected()) {
+                            self.selected_id = Some(item.id);
                         }
                     }
                     self.should_render = true;
@@ -230,10 +278,8 @@ impl App {
                         self.preview_state.scroll_page_down();
                     } else {
                         self.history_state.scroll_page_down();
-                        if let Some((id, _)) =
-                            filtered_ids_and_content.get(self.history_state.selected())
-                        {
-                            self.selected_id = Some(*id);
+                        if let Some(item) = filtered_items.get(self.history_state.selected()) {
+                            self.selected_id = Some(item.id);
                         }
                     }
                     self.should_render = true;
@@ -276,9 +322,9 @@ impl App {
                     }
                 }
                 Key::Enter => {
-                    if let Some((id, content)) = filtered_ids_and_content.get(current_index) {
-                        ClipboardManager::copy(content, &self.config).ok();
-                        let id_to_move = *id;
+                    if let Some(item) = filtered_items.get(current_index) {
+                        ClipboardManager::copy(&item.content, &self.config).ok();
+                        let id_to_move = item.id;
                         let mut h_write = self.history.lock().unwrap();
                         h_write.move_to_top(id_to_move);
 
@@ -300,37 +346,29 @@ impl App {
                 }
                 Key::Up | Key::Char('k') => {
                     self.history_state.scroll_up();
-                    if let Some((id, _)) =
-                        filtered_ids_and_content.get(self.history_state.selected())
-                    {
-                        self.selected_id = Some(*id);
+                    if let Some(item) = filtered_items.get(self.history_state.selected()) {
+                        self.selected_id = Some(item.id);
                     }
                     self.should_render = true;
                 }
                 Key::Down | Key::Char('j') => {
                     self.history_state.scroll_down();
-                    if let Some((id, _)) =
-                        filtered_ids_and_content.get(self.history_state.selected())
-                    {
-                        self.selected_id = Some(*id);
+                    if let Some(item) = filtered_items.get(self.history_state.selected()) {
+                        self.selected_id = Some(item.id);
                     }
                     self.should_render = true;
                 }
                 Key::PageUp => {
                     self.history_state.scroll_page_up();
-                    if let Some((id, _)) =
-                        filtered_ids_and_content.get(self.history_state.selected())
-                    {
-                        self.selected_id = Some(*id);
+                    if let Some(item) = filtered_items.get(self.history_state.selected()) {
+                        self.selected_id = Some(item.id);
                     }
                     self.should_render = true;
                 }
                 Key::PageDown => {
                     self.history_state.scroll_page_down();
-                    if let Some((id, _)) =
-                        filtered_ids_and_content.get(self.history_state.selected())
-                    {
-                        self.selected_id = Some(*id);
+                    if let Some(item) = filtered_items.get(self.history_state.selected()) {
+                        self.selected_id = Some(item.id);
                     }
                     self.should_render = true;
                 }
@@ -401,18 +439,12 @@ impl App {
                     self.should_render = true;
                 }
                 Key::Enter => {
-                    let selected_item = self.get_selected_item();
-                    if let Some(item) = selected_item {
-                        let content_type = match item.content {
-                            ClipboardContent::Text(_) => "text",
-                            ClipboardContent::Image(_) => "image",
-                        };
-                        let filtered_tools = self.get_filtered_tools(content_type);
-                        if !filtered_tools.is_empty() {
-                            let tool_idx = self.selected_tool_index.min(filtered_tools.len() - 1);
-                            let tool = &filtered_tools[tool_idx];
-                            self.execute_tool(tool, &item);
-                        }
+                    let (filtered_tools, tool_idx) = self.get_tools_context();
+                    if let Some(item) = self.get_selected_item()
+                        && !filtered_tools.is_empty()
+                    {
+                        let tool = &filtered_tools[tool_idx];
+                        self.execute_tool(tool, &item);
                     }
                     self.mode = Mode::Normal;
                     self.search_query.clear();
@@ -428,29 +460,6 @@ impl App {
                 }
             },
         }
-    }
-
-    fn get_selected_item(&self) -> Option<carnet::history::HistoryItem> {
-        let h = self.history.lock().unwrap();
-        let filtered = h.get_filtered("");
-        if let Some(id) = self.selected_id {
-            filtered.iter().find(|i| i.id == id).map(|&i| i.clone())
-        } else {
-            filtered.first().map(|&i| i.clone())
-        }
-    }
-
-    fn get_filtered_tools(&self, content_type: &str) -> Vec<Tool> {
-        self.config
-            .tools
-            .iter()
-            .filter(|tool| {
-                let tool_ctx = tool.content_type.to_lowercase();
-                (tool_ctx == "both" || tool_ctx == content_type)
-                    && fuzzy_match(&self.search_query, &tool.name)
-            })
-            .cloned()
-            .collect()
     }
 
     fn execute_tool(&mut self, tool: &Tool, item: &carnet::history::HistoryItem) {
@@ -512,26 +521,19 @@ impl App {
             return None;
         }
 
-        let selected_item = self.get_selected_item()?;
-        let content_type = match selected_item.content {
-            ClipboardContent::Text(_) => "text",
-            ClipboardContent::Image(_) => "image",
-        };
-
-        let filtered_tools = self.get_filtered_tools(content_type);
+        let (filtered_tools, tool_idx) = self.get_tools_context();
         if filtered_tools.is_empty() {
             self.preview_animation_progress = None;
             return None;
         }
 
-        let tool_idx = self.selected_tool_index.min(filtered_tools.len() - 1);
         let tool = &filtered_tools[tool_idx];
-
         if !tool.preview {
             self.preview_animation_progress = None;
             return None;
         }
 
+        let selected_item = self.get_selected_item()?;
         let res = self
             .preview_manager
             .get_preview(tool, &selected_item.content);
@@ -554,15 +556,20 @@ impl App {
             return Ok(());
         }
 
+        let (filtered_items, history_idx) = self.get_history_context();
+        let (filtered_tools, tool_idx) = self.get_tools_context();
+
         let preview_result = self.get_preview_result();
         let active_id = ClipboardManager::capture().map(|c| HistoryManager::calculate_id(&c));
 
         Renderer::render(
             terminal,
-            &self.history,
             &self.mode,
             &self.search_query,
-            self.selected_id,
+            &filtered_items,
+            &filtered_tools,
+            history_idx,
+            tool_idx,
             active_id,
             &mut self.history_state,
             &mut self.tool_state,

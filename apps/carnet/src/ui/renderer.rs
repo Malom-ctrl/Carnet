@@ -1,10 +1,9 @@
 use crate::clipboard::ClipboardContent;
-use crate::config::Config;
-use crate::history::HistoryManager;
+use crate::config::{Config, Tool};
+use crate::history::HistoryItem;
 use crate::ui::Mode;
 use crate::ui::preview::PreviewResult;
 use std::io;
-use std::sync::Mutex;
 use std::time::SystemTime;
 use term_uikit::Terminal;
 use term_uikit::image_proc::ImageProcessor;
@@ -20,10 +19,12 @@ impl Renderer {
     #[allow(clippy::too_many_arguments)]
     pub fn render(
         terminal: &mut Terminal,
-        history: &Mutex<HistoryManager>,
         mode: &Mode,
         search_query: &str,
-        selected_id: Option<u64>,
+        filtered_items: &[HistoryItem],
+        filtered_tools: &[Tool],
+        selected_index: usize,
+        tool_index: usize,
         active_id: Option<u64>,
         history_state: &mut ListState,
         tool_state: &mut ListState,
@@ -34,60 +35,9 @@ impl Renderer {
         preview_state: &mut ParagraphState,
     ) -> io::Result<()> {
         // --- DATA GATHERING ---
-        let h_lock = history.lock().unwrap();
-        let all_items = h_lock.items();
         let (rows, cols) = terminal.size();
         terminal.resize(cols, rows);
         let area = Rect::new(0, 0, cols, rows);
-
-        // Determine context content type
-        let selected_item_ref = if let Some(sid) = selected_id {
-            all_items.get(&sid)
-        } else {
-            h_lock.get_filtered("").first().cloned()
-        };
-
-        let context_type = selected_item_ref
-            .map(|item| match item.content {
-                ClipboardContent::Text(_) => "text",
-                ClipboardContent::Image(_) => "image",
-            })
-            .unwrap_or("none");
-
-        // Filter items/tools based on mode
-        let mut filtered_items = Vec::new();
-        let mut filtered_tools = Vec::new();
-        let mut selected_index = 0;
-
-        if matches!(mode, Mode::Tools) {
-            filtered_tools = config
-                .tools
-                .iter()
-                .filter(|tool| {
-                    let tool_ctx = tool.content_type.to_lowercase();
-                    let ctx_match = if context_type == "none" {
-                        true
-                    } else {
-                        tool_ctx == "both" || tool_ctx == context_type
-                    };
-                    ctx_match && crate::ui::fuzzy_match(search_query, &tool.name)
-                })
-                .collect::<Vec<_>>();
-
-            if let Some(item) = selected_item_ref {
-                filtered_items.push(item.clone());
-            }
-            selected_index = 0;
-        } else {
-            let h_filtered = h_lock.get_filtered(search_query);
-            filtered_items = h_filtered.iter().map(|&i| i.clone()).collect();
-            if let Some(sid) = selected_id {
-                selected_index = filtered_items
-                    .iter()
-                    .position(|item| item.id == sid)
-                    .unwrap_or(0);
-            }
-        }
 
         // Palette for bottom bar
         let palette = match mode {
@@ -221,8 +171,10 @@ impl Renderer {
         }
 
         let list_state = if matches!(mode, Mode::Tools) {
+            tool_state.select(tool_index);
             tool_state
         } else {
+            history_state.select(selected_index);
             history_state
         };
         let history_list = List::new(list_items, list_state)
