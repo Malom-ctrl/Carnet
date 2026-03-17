@@ -1,6 +1,7 @@
 use std::io::{self, BufWriter, Write};
 use std::mem;
 use std::os::unix::io::AsRawFd;
+use std::collections::HashMap;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Cell {
@@ -58,6 +59,7 @@ pub struct Terminal {
     original_termios: libc::termios,
     pub current_buffer: Buffer,
     pub next_buffer: Buffer,
+    pub image_cache: HashMap<(u64, u16, u16), (u16, u16, String)>,
     current_fg: String,
     current_bg: String,
     cursor_x: u16,
@@ -79,6 +81,7 @@ impl Terminal {
             original_termios,
             current_buffer: Buffer::new(0, 0),
             next_buffer: Buffer::new(0, 0),
+            image_cache: HashMap::new(),
             current_fg: "0".to_string(),
             current_bg: "".to_string(),
             cursor_x: 0,
@@ -116,6 +119,10 @@ impl Terminal {
 
     pub fn clear_images(&mut self) -> io::Result<()> {
         write!(self.stdout, "\x1b_Ga=d,d=A\x1b\\")?;
+        for cell in &mut self.current_buffer.cells {
+            cell.image_hash = None;
+            cell.image_data = None;
+        }
         Ok(())
     }
 

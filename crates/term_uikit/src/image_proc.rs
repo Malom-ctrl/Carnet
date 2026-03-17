@@ -320,6 +320,20 @@ impl ImageProcessor {
         w: u16,
         h: u16,
     ) -> io::Result<()> {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher = DefaultHasher::new();
+        data.hash(&mut hasher);
+        let input_hash = hasher.finish();
+
+        if let Some((cached_c, cached_r, cached_seq)) = terminal.image_cache.get(&(input_hash, w, h)) {
+            let target_x = x + (w.saturating_sub(*cached_c) / 2);
+            let target_y = y + (h.saturating_sub(*cached_r) / 2);
+            terminal.set_image(target_x, target_y, *cached_c, *cached_r, input_hash, cached_seq.clone());
+            return Ok(());
+        }
+
         let term_var = std::env::var("TERM").unwrap_or_default();
         let in_tmux = std::env::var("TMUX").is_ok() || term_var.contains("tmux");
 
@@ -354,16 +368,12 @@ impl ImageProcessor {
             image_full_seq.push_str(&seq);
         }
 
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-        let mut hasher = DefaultHasher::new();
-        rgba.hash(&mut hasher);
-        let hash = hasher.finish();
+        terminal.image_cache.insert((input_hash, w, h), (c, r, image_full_seq.clone()));
 
         let target_x = x + (w.saturating_sub(c) / 2);
         let target_y = y + (h.saturating_sub(r) / 2);
 
-        terminal.set_image(target_x, target_y, c, r, hash, image_full_seq);
+        terminal.set_image(target_x, target_y, c, r, input_hash, image_full_seq);
         Ok(())
     }
 }
