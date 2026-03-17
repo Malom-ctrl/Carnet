@@ -327,10 +327,19 @@ impl ImageProcessor {
         data.hash(&mut hasher);
         let input_hash = hasher.finish();
 
-        if let Some((cached_c, cached_r, cached_seq)) = terminal.image_cache.get(&(input_hash, w, h)) {
+        if let Some((cached_c, cached_r, cached_seq)) =
+            terminal.image_cache.get(&(input_hash, w, h))
+        {
             let target_x = x + (w.saturating_sub(*cached_c) / 2);
             let target_y = y + (h.saturating_sub(*cached_r) / 2);
-            terminal.set_image(target_x, target_y, *cached_c, *cached_r, input_hash, cached_seq.clone());
+            terminal.set_image(
+                target_x,
+                target_y,
+                *cached_c,
+                *cached_r,
+                input_hash,
+                cached_seq.clone(),
+            );
             return Ok(());
         }
 
@@ -368,7 +377,9 @@ impl ImageProcessor {
             image_full_seq.push_str(&seq);
         }
 
-        terminal.image_cache.insert((input_hash, w, h), (c, r, image_full_seq.clone()));
+        terminal
+            .image_cache
+            .insert((input_hash, w, h), (c, r, image_full_seq.clone()));
 
         let target_x = x + (w.saturating_sub(c) / 2);
         let target_y = y + (h.saturating_sub(r) / 2);
