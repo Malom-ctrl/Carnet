@@ -101,27 +101,26 @@ REFRESH_RATE_MS=200
 CLIPBOARD_SYNC_DELAY_MS=100
 
 # --- Tools ---
-# Format: TOOL_NAME = Display Name | command to run | context | preview
-# context: text, image, both (default)
-# preview: "preview" (optional) to enable live preview
+# Format: TOOL_NAME = Display Name | context | preview_flag | command
+# context: text, image, both
+# preview_flag: preview, no-preview
+# command: The command to run (can contain pipes)
 
 # Text Tools
-TOOL_UPPER = Upper Case | tr '[:lower:]' '[:upper:]' | text | preview
-TOOL_LOWER = Lower Case | tr '[:upper:]' '[:lower:]' | text | preview
-TOOL_B64_ENC = Base64 Encode | base64 | text | preview
-TOOL_B64_DEC = Base64 Decode | base64 -d | text | preview
-TOOL_STRIP = Remove Formatting | tr -d '\n\r\t' | text | preview
-TOOL_TRIM = Trim Whitespace | xargs | text | preview
-TOOL_JSON_PP = JSON Pretty Print | jq . | text | preview
-TOOL_WC = Word Count | wc -w | text | preview
-TOOL_SORT = Sort Lines | sort | text | preview
-TOOL_UNIQ = Unique Lines | sort | uniq | text | preview
+TOOL_UPPER = Upper Case | text | preview | tr '[:lower:]' '[:upper:]'
+TOOL_LOWER = Lower Case | text | preview | tr '[:upper:]' '[:lower:]'
+TOOL_B64_ENC = Base64 Encode | text | preview | base64
+TOOL_B64_DEC = Base64 Decode | text | preview | base64 -d
+TOOL_STRIP = Remove Formatting | text | preview | tr -d '\n\r\t'
+TOOL_TRIM = Trim Whitespace | text | preview | xargs
+TOOL_JSON_PP = JSON Pretty Print | text | preview | jq .
+TOOL_WC = Word Count | text | preview | wc -w
+TOOL_SORT = Sort Lines | text | preview | sort
+TOOL_UNIQ = Unique Lines | text | preview | sort | uniq
 "#;
 
 impl Config {
     pub fn load() -> Self {
-        let mut config = Self::default();
-
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
         let mut config_dir = PathBuf::from(home);
         config_dir.push(".config/carnet");
@@ -138,93 +137,94 @@ impl Config {
         }
 
         if let Ok(content) = fs::read_to_string(path) {
-            for line in content.lines() {
-                let line = line.trim();
-                if line.is_empty() || line.starts_with('#') {
-                    continue;
-                }
+            Self::parse(&content)
+        } else {
+            Self::default()
+        }
+    }
 
-                if let Some((key, value)) = line.split_once('=') {
-                    let key = key.trim();
-                    let value = value.trim();
+    pub fn parse(content: &str) -> Self {
+        let mut config = Self::default();
 
-                    match key {
-                        "HISTORY_MAX_ITEMS" => {
-                            if let Ok(v) = value.parse() {
-                                config.history_max_items = v;
-                            }
+        for line in content.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+
+            if let Some((key, value)) = line.split_once('=') {
+                let key = key.trim();
+                let value = value.trim();
+
+                match key {
+                    "HISTORY_MAX_ITEMS" => {
+                        if let Ok(v) = value.parse() {
+                            config.history_max_items = v;
                         }
-                        "HISTORY_MAX_ITEM_SIZE" => {
-                            if let Ok(v) = value.parse() {
-                                config.history_max_item_size = v;
-                            }
+                    }
+                    "HISTORY_MAX_ITEM_SIZE" => {
+                        if let Ok(v) = value.parse() {
+                            config.history_max_item_size = v;
                         }
-                        "HISTORY_FILE_NAME" => {
-                            config.history_file_name = value.to_string();
+                    }
+                    "HISTORY_FILE_NAME" => {
+                        config.history_file_name = value.to_string();
+                    }
+                    "AUTO_CONVERT_IMAGE_URI" => {
+                        config.auto_convert_image_uri = value.to_lowercase() == "true";
+                    }
+                    "UI_COLOR_PRIMARY" => {
+                        config.ui_color_primary = value.to_string();
+                    }
+                    "UI_COLOR_HIGHLIGHT" => {
+                        config.ui_color_highlight = value.to_string();
+                    }
+                    "UI_COLOR_DIM" => {
+                        config.ui_color_dim = value.to_string();
+                    }
+                    "UI_ICON_TEXT" => {
+                        config.ui_icon_text = value.to_string();
+                    }
+                    "UI_ICON_IMAGE" => {
+                        config.ui_icon_image = value.to_string();
+                    }
+                    "UI_ICON_PROMPT" => {
+                        config.ui_icon_prompt = value.to_string();
+                    }
+                    "UI_ICON_PIN" => {
+                        config.ui_icon_pin = value.to_string();
+                    }
+                    "UI_ICON_SENSITIVE" => {
+                        config.ui_icon_sensitive = value.to_string();
+                    }
+                    "UI_BORDER_CHARS" => {
+                        if value.chars().count() >= 6 {
+                            config.ui_border_chars = value.to_string();
                         }
-                        "AUTO_CONVERT_IMAGE_URI" => {
-                            config.auto_convert_image_uri = value.to_lowercase() == "true";
+                    }
+                    "UI_SHOW_NEWLINES" => {
+                        config.ui_show_newlines = value.to_lowercase() == "true";
+                    }
+                    "REFRESH_RATE_MS" => {
+                        if let Ok(v) = value.parse() {
+                            config.refresh_rate_ms = v;
                         }
-                        "UI_COLOR_PRIMARY" => {
-                            config.ui_color_primary = value.to_string();
+                    }
+                    "CLIPBOARD_SYNC_DELAY_MS" => {
+                        if let Ok(v) = value.parse() {
+                            config.clipboard_sync_delay_ms = v;
                         }
-                        "UI_COLOR_HIGHLIGHT" => {
-                            config.ui_color_highlight = value.to_string();
-                        }
-                        "UI_COLOR_DIM" => {
-                            config.ui_color_dim = value.to_string();
-                        }
-                        "UI_ICON_TEXT" => {
-                            config.ui_icon_text = value.to_string();
-                        }
-                        "UI_ICON_IMAGE" => {
-                            config.ui_icon_image = value.to_string();
-                        }
-                        "UI_ICON_PROMPT" => {
-                            config.ui_icon_prompt = value.to_string();
-                        }
-                        "UI_ICON_PIN" => {
-                            config.ui_icon_pin = value.to_string();
-                        }
-                        "UI_ICON_SENSITIVE" => {
-                            config.ui_icon_sensitive = value.to_string();
-                        }
-                        "UI_BORDER_CHARS" => {
-                            if value.chars().count() >= 6 {
-                                config.ui_border_chars = value.to_string();
-                            }
-                        }
-                        "UI_SHOW_NEWLINES" => {
-                            config.ui_show_newlines = value.to_lowercase() == "true";
-                        }
-                        "REFRESH_RATE_MS" => {
-                            if let Ok(v) = value.parse() {
-                                config.refresh_rate_ms = v;
-                            }
-                        }
-                        "CLIPBOARD_SYNC_DELAY_MS" => {
-                            if let Ok(v) = value.parse() {
-                                config.clipboard_sync_delay_ms = v;
-                            }
-                        }
-                        _ => {
-                            if key.starts_with("TOOL_") {
-                                let parts: Vec<&str> = value.split('|').collect();
-                                if parts.len() >= 2 {
-                                    config.tools.push(Tool {
-                                        name: parts[0].trim().to_string(),
-                                        bin: parts[1].trim().to_string(),
-                                        content_type: parts
-                                            .get(2)
-                                            .unwrap_or(&"both")
-                                            .trim()
-                                            .to_lowercase(),
-                                        preview: parts
-                                            .get(3)
-                                            .map(|s| s.trim().to_lowercase() == "preview")
-                                            .unwrap_or(false),
-                                    });
-                                }
+                    }
+                    _ => {
+                        if key.starts_with("TOOL_") {
+                            let parts: Vec<&str> = value.splitn(4, '|').collect();
+                            if parts.len() == 4 {
+                                config.tools.push(Tool {
+                                    name: parts[0].trim().to_string(),
+                                    content_type: parts[1].trim().to_lowercase(),
+                                    preview: parts[2].trim().to_lowercase() == "preview",
+                                    bin: parts[3].trim().to_string(),
+                                });
                             }
                         }
                     }

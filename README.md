@@ -91,18 +91,19 @@ window-rule {
 
 Now the best part: the tools! You define them in your config file (`~/.config/carnet/config`). Each tool takes the clipboard content via `stdin` and if it outputs anything to `stdout`, it will be copied back to your clipboard.
 
-Format: `TOOL_NAME = Display Name | command to run | context`
+Format: `TOOL_NAME = Display Name | context | preview_flag | command`
 
 Context can be `text`, `image`, or `both`.
+Preview flag can be `preview` or `no-preview`.
 
 **Example Tools**
 ~~~ini
-TOOL_UPPER = Upper Case | tr '[:lower:]' '[:upper:]' | text
-TOOL_LOWER = Lower Case | tr '[:upper:]' '[:lower:]' | text
-TOOL_B64_ENC = Base64 Encode | base64 | text
-TOOL_JSON_PP = JSON Pretty Print | jq . | text
-TOOL_WC = Word Count | wc -w | text
-TOOL_MAGICK = Resize (50%) | magick - -resize 50% - | image
+TOOL_UPPER = Upper Case | text | preview | tr '[:lower:]' '[:upper:]'
+TOOL_LOWER = Lower Case | text | preview | tr '[:upper:]' '[:lower:]'
+TOOL_B64_ENC = Base64 Encode | text | preview | base64
+TOOL_JSON_PP = JSON Pretty Print | text | preview | jq .
+TOOL_WC = Word Count | text | preview | wc -w
+TOOL_MAGICK = Resize (50%) | image | no-preview | magick - -resize 50% -
 ~~~
 
 ## Configuration
